@@ -1,0 +1,417 @@
+generator client {
+    provider        = "prisma-client-js"
+    previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+    provider  = "postgresql"
+    url       = env("DATABASE_URL")
+    directUrl = env("DIRECT_URL") // necessário para migrations no Neon
+}
+
+// ---------- USERS & AUTH ----------
+model User {
+    id               String    @id @default(cuid())
+    name             String
+    email            String    @unique
+    password         String
+    role             Role      @default(ATTENDANT)
+    avatar           String?
+    twoFactorSecret  String?
+    twoFactorEnabled Boolean   @default(false)
+    isActive         Boolean   @default(true)
+    lastLoginAt      DateTime?
+    createdAt        DateTime  @default(now())
+    updatedAt        DateTime  @updatedAt
+
+    client         Client?
+    projects       Project[]      @relation("ProjectDesigner")
+    orders         Order[]        @relation("OrderCreator")
+    comments       Comment[]
+    activities     ActivityLog[]
+    tasks          Task[]         @relation("TaskAssignee")
+    createdByTasks Task[]         @relation("TaskCreator")
+    notifications  Notification[]
+    sessions       Session[]
+}
+
+model Session {
+    id        String   @id @default(cuid())
+    userId    String
+    token     String   @unique
+    device    String?
+    ip        String?
+    userAgent String?
+    expiresAt DateTime
+    createdAt DateTime @default(now())
+    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ActivityLog {
+    id        String   @id @default(cuid())
+    userId    String?
+    action    String // LOGIN, CREATE_ORDER, UPDATE_PROJECT, etc
+    entity    String? // Order, Project, Client...
+    entityId  String?
+    metadata  Json?
+    ip        String?
+    createdAt DateTime @default(now())
+    user      User?    @relation(fields: [userId], references: [id])
+
+    @@index([userId, createdAt])
+    @@index([entity, entityId])
+}
+
+// ---------- CLIENTS ----------
+model Client {
+    id          String    @id @default(cuid())
+    name        String
+    document    String    @unique // CPF ou CNPJ
+    email       String    @unique
+    phone       String?
+    mobile      String?
+    birthDate   DateTime?
+    gender      Gender?
+    tags        String[] // segmentação
+    socialMedia Json? // {instagram, facebook, linkedin}
+    notes       String?
+
+    // Endereço principal
+    address Address?
+
+    // Relações
+    userId String @unique // o usuário correspondente, se cliente
+    user   User   @relation(fields: [userId], references: [id])
+
+    projects  Project[]
+    orders    Order[]
+    quotes    Quote[]
+    createdAt DateTime  @default(now())
+    updatedAt DateTime  @updatedAt
+
+    @@index([email])
+    @@index([document])
+}
+
+model Address {
+    id         String  @id @default(cuid())
+    street     String
+    number     String
+    complement String?
+    district   String
+    city       String
+    state      String
+    zipCode    String
+    country    String  @default("Brasil")
+    isDefault  Boolean @default(true)
+    clientId   String  @unique
+    client     Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+enum Gender {
+    // ---------- CATALOG ----------
+    model Category {
+    id          String    @id @default(cuid())
+    name        String    @unique
+    slug        String    @unique
+    description String?
+    parentId    String?
+    parent      Category? @relation("CategoryTree", fields: [parentId], references: [id])
+    children    Category[] @relation("CategoryTree")
+    products    Product[]
+    isActive    Boolean   @default(true)
+    createdAt   DateTime  @default(now())
+}
+
+model Product {
+    id             String    @id @default(cuid())
+    sku            String    @unique
+    name           String
+    description    String?
+    categoryId     String?
+    category       Category? @relation(fields: [categoryId], references: [id])
+    costPrice      Float
+    salePrice      Float
+    margin         Float // % calculada
+    stock          Int       @default(0)
+    minStock       Int       @default(5)
+    colors         String[]
+    sizes          String[]
+    materials      String[]
+    images         String[] // URLs
+    isCustomizable Boolean   @default(false)
+    isActive       Boolean   @default(true)
+    createdAt      DateTime  @default(now())
+    updatedAt      DateTime  @updatedAt
+
+    orderItems OrderItem[]
+    quoteItems QuoteItem[]
+    kits       KitItem[]
+}
+
+model Kit {
+    id          String    @id @default(cuid())
+    name        String
+    description String?
+    price       Float
+    isActive    Boolean   @default(true)
+    items       KitItem[]
+    createdAt   DateTime  @default(now())
+}
+
+model KitItem {
+    id        String  @id @default(cuid())
+    kitId     String
+    productId String
+    quantity  Int
+    kit       Kit     @relation(fields: [kitId], references: [id], onDelete: Cascade)
+    product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+    @@unique([kitId, productId])
+}
+
+// ---------- PROJECTS ----------
+model Project {
+    id          String        @id @default(cuid())
+    code        String        @unique @default(cuid())
+    title       String
+    description String?
+    status      ProjectStatus @default(ANALYSIS)
+    priority    Priority      @default(NORMAL)
+    clientId    String
+    client      Client        @relation(fields: [clientId], references: [id])
+    designerId  String?
+    designer    User?         @relation("ProjectDesigner", fields: [designerId], references: [id])
+    orderId     String?
+    order       Order?        @relation(fields: [orderId], references: [id])
+    dueDate     DateTime?
+    completedAt DateTime?
+    createdAt   DateTime      @default(now())
+    updatedAt   DateTime      @updatedAt
+
+    files     ProjectFile[]
+    comments  Comment[]
+    approvals Approval[]
+    tasks     Task[]
+}
+
+model ProjectFile {
+    id         String   @id @default(cuid())
+    projectId  String
+    name       String
+    url        String
+    type       String // PSD, AI, PDF, PNG, JPG
+    version    Int      @default(1)
+    size       Int
+    isFinal    Boolean  @default(false)
+    uploadedBy String?
+    createdAt  DateTime @default(now())
+    project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    @@index([projectId, version])
+}
+
+model Comment {
+    id         String   @id @default(cuid())
+    projectId  String
+    userId     String?
+    content    String
+    isInternal Boolean  @default(false)
+    parentId   String?
+    createdAt  DateTime @default(now())
+    updatedAt  DateTime @updatedAt
+    project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    user       User?    @relation(fields: [userId], references: [id])
+}
+
+model Approval {
+    id            String   @id @default(cuid())
+    projectId     String
+    approvedBy    String // nome
+    approvedEmail String
+    signature     String? // base64 ou hash
+    notes         String?
+    createdAt     DateTime @default(now())
+    project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+enum ProjectStatus {
+    enum Priority { LOW NORMAL HIGH URGENT }
+
+    // ---------- ORDERS ----------
+    model Order {
+    id              String        @id @default(cuid())
+    code            String        @unique
+    clientId        String
+    client          Client        @relation(fields: [clientId], references: [id])
+    creatorId       String?
+    creator         User?         @relation("OrderCreator", fields: [creatorId], references: [id])
+    status          OrderStatus   @default(BUDGET)
+    items           OrderItem[]
+    subtotal        Float
+    discount        Float         @default(0)
+    shippingCost    Float         @default(0)
+    total           Float
+    shippingAddress String?
+    paymentMethod   PaymentMethod
+    paymentStatus   PaymentStatus @default(PENDING)
+    trackingCode    String?
+    notes           String?
+    projectId       String?
+    project         Project?      @relation(fields: [projectId], references: [id])
+    dueDate         DateTime?
+    createdAt       DateTime      @default(now())
+    updatedAt       DateTime      @updatedAt
+    deliveredAt     DateTime?
+
+    invoices        Invoice[]
+    quotes          Quote[]
+}
+
+model OrderItem {
+    id             String  @id @default(cuid())
+    orderId        String
+    order          Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+    productId      String
+    product        Product @relation(fields: [productId], references: [id])
+    quantity       Int
+    unitPrice      Float
+    discount       Float   @default(0)
+    totalPrice     Float
+    customizations Json? // {color, size, artworkUrl}
+}
+
+enum OrderStatus {
+    enum PaymentMethod { CASH BOLETO CREDIT_CARD PIX }
+    enum PaymentStatus { PENDING PAID REFUNDED CANCELLED }
+
+    // ---------- INVOICES & QUOTES ----------
+    model Invoice {
+    id           String   @id @default(cuid())
+    number       String   @unique
+    orderId      String
+    order        Order    @relation(fields: [orderId], references: [id])
+    issueDate    DateTime @default(now())
+    dueDate      DateTime?
+    total        Float
+    status       InvoiceStatus @default(OPEN)
+    pdfUrl       String?
+    createdAt    DateTime @default(now())
+}
+
+model Quote {
+    id         String      @id @default(cuid())
+    number     String      @unique
+    clientId   String
+    client     Client      @relation(fields: [clientId], references: [id])
+    orderId    String?
+    order      Order?      @relation(fields: [orderId], references: [id])
+    items      QuoteItem[]
+    subtotal   Float
+    discount   Float       @default(0)
+    total      Float
+    notes      String?
+    validUntil DateTime
+    status     QuoteStatus @default(DRAFT)
+    pdfUrl     String?
+    createdAt  DateTime    @default(now())
+    updatedAt  DateTime    @updatedAt
+}
+
+model QuoteItem {
+    id         String  @id @default(cuid())
+    quoteId    String
+    quote      Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+    productId  String
+    product    Product @relation(fields: [productId], references: [id])
+    quantity   Int
+    unitPrice  Float
+    totalPrice Float
+}
+
+enum QuoteStatus {
+    enum InvoiceStatus { OPEN PAID OVERDUE CANCELLED }
+
+    // ---------- SUPPLIERS & PURCHASES ----------
+    model Supplier {
+    id        String   @id @default(cuid())
+    name      String
+    document  String?  @unique
+    email     String?
+    phone     String?
+    contact   String?
+    address   String?
+    notes     String?
+    isActive  Boolean  @default(true)
+    purchases Purchase[]
+    createdAt DateTime @default(now())
+}
+
+model Purchase {
+    id         String         @id @default(cuid())
+    code       String         @unique
+    supplierId String
+    supplier   Supplier       @relation(fields: [supplierId], references: [id])
+    items      Json // [{name, quantity, unitPrice}]
+    total      Float
+    status     PurchaseStatus @default(PENDING)
+    dueDate    DateTime?
+    paidAt     DateTime?
+    createdAt  DateTime       @default(now())
+}
+
+enum PurchaseStatus {
+    // ---------- TASKS ----------
+    model Task {
+    id          String     @id @default(cuid())
+    title       String
+    description String?
+    status      TaskStatus @default(TODO)
+    priority    Priority   @default(NORMAL)
+    projectId   String?
+    project     Project?   @relation(fields: [projectId], references: [id])
+    assigneeId  String?
+    assignee    User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+    creatorId   String
+    creator     User       @relation("TaskCreator", fields: [creatorId], references: [id])
+    dueDate     DateTime?
+    completedAt DateTime?
+    createdAt   DateTime   @default(now())
+    updatedAt   DateTime   @updatedAt
+}
+
+enum TaskStatus {
+    // ---------- NOTIFICATIONS ----------
+    model Notification {
+    id        String   @id @default(cuid())
+    userId    String
+    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    title     String
+    message   String
+    type      NotificationType
+    isRead    Boolean  @default(false)
+    metadata  Json?
+    createdAt DateTime @default(now())
+
+    @@index([userId, isRead, createdAt])
+}
+
+enum NotificationType {
+    // ---------- COMPANY SETTINGS ----------
+    model CompanySettings {
+    id              String @id @default(cuid())
+    name            String
+    cnpj            String
+    email           String
+    phone           String
+    address         String
+    logoUrl         String?
+    smtpHost        String?
+    smtpPort        Int?
+    smtpUser        String?
+    smtpPassword    String?
+    smtpFrom        String?
+    invoicePrefix   String @default("NF")
+    quotePrefix     String @default("ORC")
+    orderPrefix     String @default("PED")
+}
