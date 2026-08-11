@@ -9,6 +9,95 @@ datasource db {
     directUrl = env("DIRECT_URL") // necessário para migrations no Neon
 }
 
+// ---------- ENUMS ----------
+enum Role {
+    ADMIN
+    DESIGNER
+    ATTENDANT
+    CLIENT
+}
+
+enum Gender {
+    MALE
+    FEMALE
+    OTHER
+}
+
+enum ProjectStatus {
+    ANALYSIS
+    CREATING
+    AWAITING_APPROVAL
+    PRODUCTION
+    COMPLETED
+    CANCELLED
+}
+
+enum Priority {
+    LOW
+    NORMAL
+    HIGH
+    URGENT
+}
+
+enum OrderStatus {
+    BUDGET
+    CONFIRMED
+    IN_PRODUCTION
+    READY
+    DELIVERED
+    CANCELLED
+}
+
+enum PaymentMethod {
+    CASH
+    BOLETO
+    CREDIT_CARD
+    PIX
+}
+
+enum PaymentStatus {
+    PENDING
+    PAID
+    REFUNDED
+    CANCELLED
+}
+
+enum InvoiceStatus {
+    OPEN
+    PAID
+    OVERDUE
+    CANCELLED
+}
+
+enum QuoteStatus {
+    DRAFT
+    SENT
+    APPROVED
+    REJECTED
+    EXPIRED
+    CONVERTED
+}
+
+enum PurchaseStatus {
+    PENDING
+    PAID
+    CANCELLED
+}
+
+enum TaskStatus {
+    TODO
+    IN_PROGRESS
+    DONE
+    CANCELLED
+}
+
+enum NotificationType {
+    INFO
+    SUCCESS
+    WARNING
+    ERROR
+}
+
 // ---------- USERS & AUTH ----------
 model User {
     id               String    @id @default(cuid())
@@ -108,19 +197,18 @@ model Address {
     client     Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
-enum Gender {
-    // ---------- CATALOG ----------
-    model Category {
-    id          String    @id @default(cuid())
-    name        String    @unique
-    slug        String    @unique
+// ---------- CATALOG ----------
+model Category {
+    id          String     @id @default(cuid())
+    name        String     @unique
+    slug        String     @unique
     description String?
     parentId    String?
-    parent      Category? @relation("CategoryTree", fields: [parentId], references: [id])
+    parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id])
     children    Category[] @relation("CategoryTree")
     products    Product[]
-    isActive    Boolean   @default(true)
-    createdAt   DateTime  @default(now())
+    isActive    Boolean    @default(true)
+    createdAt   DateTime   @default(now())
 }
 
 model Product {
@@ -193,6 +281,7 @@ model Project {
     comments  Comment[]
     approvals Approval[]
     tasks     Task[]
+    orders    Order[]
 }
 
 model ProjectFile {
@@ -235,11 +324,8 @@ model Approval {
     project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
-enum ProjectStatus {
-    enum Priority { LOW NORMAL HIGH URGENT }
-
-    // ---------- ORDERS ----------
-    model Order {
+// ---------- ORDERS ----------
+model Order {
     id              String        @id @default(cuid())
     code            String        @unique
     clientId        String
@@ -264,8 +350,8 @@ enum ProjectStatus {
     updatedAt       DateTime      @updatedAt
     deliveredAt     DateTime?
 
-    invoices        Invoice[]
-    quotes          Quote[]
+    invoices Invoice[]
+    quotes   Quote[]
 }
 
 model OrderItem {
@@ -281,22 +367,18 @@ model OrderItem {
     customizations Json? // {color, size, artworkUrl}
 }
 
-enum OrderStatus {
-    enum PaymentMethod { CASH BOLETO CREDIT_CARD PIX }
-    enum PaymentStatus { PENDING PAID REFUNDED CANCELLED }
-
-    // ---------- INVOICES & QUOTES ----------
-    model Invoice {
-    id           String   @id @default(cuid())
-    number       String   @unique
-    orderId      String
-    order        Order    @relation(fields: [orderId], references: [id])
-    issueDate    DateTime @default(now())
-    dueDate      DateTime?
-    total        Float
-    status       InvoiceStatus @default(OPEN)
-    pdfUrl       String?
-    createdAt    DateTime @default(now())
+// ---------- INVOICES & QUOTES ----------
+model Invoice {
+    id        String        @id @default(cuid())
+    number    String        @unique
+    orderId   String
+    order     Order         @relation(fields: [orderId], references: [id])
+    issueDate DateTime      @default(now())
+    dueDate   DateTime?
+    total     Float
+    status    InvoiceStatus @default(OPEN)
+    pdfUrl    String?
+    createdAt DateTime      @default(now())
 }
 
 model Quote {
@@ -329,22 +411,19 @@ model QuoteItem {
     totalPrice Float
 }
 
-enum QuoteStatus {
-    enum InvoiceStatus { OPEN PAID OVERDUE CANCELLED }
-
-    // ---------- SUPPLIERS & PURCHASES ----------
-    model Supplier {
-    id        String   @id @default(cuid())
+// ---------- SUPPLIERS & PURCHASES ----------
+model Supplier {
+    id        String     @id @default(cuid())
     name      String
-    document  String?  @unique
+    document  String?    @unique
     email     String?
     phone     String?
     contact   String?
     address   String?
     notes     String?
-    isActive  Boolean  @default(true)
+    isActive  Boolean    @default(true)
     purchases Purchase[]
-    createdAt DateTime @default(now())
+    createdAt DateTime   @default(now())
 }
 
 model Purchase {
@@ -360,9 +439,8 @@ model Purchase {
     createdAt  DateTime       @default(now())
 }
 
-enum PurchaseStatus {
-    // ---------- TASKS ----------
-    model Task {
+// ---------- TASKS ----------
+model Task {
     id          String     @id @default(cuid())
     title       String
     description String?
@@ -380,38 +458,36 @@ enum PurchaseStatus {
     updatedAt   DateTime   @updatedAt
 }
 
-enum TaskStatus {
-    // ---------- NOTIFICATIONS ----------
-    model Notification {
-    id        String   @id @default(cuid())
+// ---------- NOTIFICATIONS ----------
+model Notification {
+    id        String           @id @default(cuid())
     userId    String
-    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
     title     String
     message   String
     type      NotificationType
-    isRead    Boolean  @default(false)
+    isRead    Boolean          @default(false)
     metadata  Json?
-    createdAt DateTime @default(now())
+    createdAt DateTime         @default(now())
 
     @@index([userId, isRead, createdAt])
 }
 
-enum NotificationType {
-    // ---------- COMPANY SETTINGS ----------
-    model CompanySettings {
-    id              String @id @default(cuid())
-    name            String
-    cnpj            String
-    email           String
-    phone           String
-    address         String
-    logoUrl         String?
-    smtpHost        String?
-    smtpPort        Int?
-    smtpUser        String?
-    smtpPassword    String?
-    smtpFrom        String?
-    invoicePrefix   String @default("NF")
-    quotePrefix     String @default("ORC")
-    orderPrefix     String @default("PED")
+// ---------- COMPANY SETTINGS ----------
+model CompanySettings {
+    id            String  @id @default(cuid())
+    name          String
+    cnpj          String
+    email         String
+    phone         String
+    address       String
+    logoUrl       String?
+    smtpHost      String?
+    smtpPort      Int?
+    smtpUser      String?
+    smtpPassword  String?
+    smtpFrom      String?
+    invoicePrefix String  @default("NF")
+    quotePrefix   String  @default("ORC")
+    orderPrefix   String  @default("PED")
 }
