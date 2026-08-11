@@ -1,12 +1,9 @@
 generator client {
-    provider        = "prisma-client-js"
-    previewFeatures = ["driverAdapters"]
+    provider = "prisma-client-js"
 }
 
 datasource db {
-    provider  = "postgresql"
-    url       = env("DATABASE_URL")
-    directUrl = env("DIRECT_URL") // necessário para migrations no Neon
+    provider = "postgresql"
 }
 
 // ---------- ENUMS ----------
@@ -271,7 +268,7 @@ model Project {
     designerId  String?
     designer    User?         @relation("ProjectDesigner", fields: [designerId], references: [id])
     orderId     String?
-    order       Order?        @relation(fields: [orderId], references: [id])
+    order       Order?        @relation("ProjectOrder", fields: [orderId], references: [id])
     dueDate     DateTime?
     completedAt DateTime?
     createdAt   DateTime      @default(now())
@@ -281,7 +278,7 @@ model Project {
     comments  Comment[]
     approvals Approval[]
     tasks     Task[]
-    orders    Order[]
+    orders    Order[]       @relation("ProjectOrders")
 }
 
 model ProjectFile {
@@ -344,7 +341,8 @@ model Order {
     trackingCode    String?
     notes           String?
     projectId       String?
-    project         Project?      @relation(fields: [projectId], references: [id])
+    project         Project?      @relation("ProjectOrders", fields: [projectId], references: [id])
+    projectOrder    Project[]     @relation("ProjectOrder")
     dueDate         DateTime?
     createdAt       DateTime      @default(now())
     updatedAt       DateTime      @updatedAt
