@@ -9,7 +9,7 @@ const api = axios.create({
 });
 
 let isRefreshing = false;
-let failedQueue: Array<{ resolve: (v: unknown) => void; reject: (r?: any) => void }> = [];
+let failedQueue: Array<{ resolve: (value: unknown) => void; reject: (reason?: any) => void }> = [];
 
 const processQueue = (error: any) => {
   failedQueue.forEach(p => (error ? p.reject(error) : p.resolve(undefined)));
@@ -26,7 +26,7 @@ api.interceptors.response.use(
   res => res,
   async (error: AxiosError) => {
     const original = error.config!;
-    const isAuthRoute = original.url?.includes('/auth/'); // 🚨 NÃO intercepta login/refresh
+    const isAuthRoute = original.url?.includes('/auth/'); // 🚨 não intercepta login/refresh
 
     if (error.response?.status === 401 && !isAuthRoute && !(original as any)._retry) {
       if (isRefreshing) {
@@ -51,7 +51,7 @@ api.interceptors.response.use(
         isRefreshing = false;
       }
     }
-    return Promise.reject(error); // ← erros de login agora chegam no onError da página
+    return Promise.reject(error);
   }
 );
 

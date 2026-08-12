@@ -39,7 +39,7 @@ const clientSchema = z.object({
   name: z.string().min(2, "Nome obrigatório"),
   document: z
     .string()
-    .min(11, "CPF/CNPJ deve ter no mínimo 11 dígitos")
+    .min(11, "CPF/CNPJ: mínimo 11 dígitos")
     .max(14, "Máximo 14 dígitos"),
   email: z.string().email("Email inválido"),
   phone: z.string().optional(),
@@ -48,6 +48,15 @@ const clientSchema = z.object({
 });
 
 type ClientForm = z.infer<typeof clientSchema>;
+
+const emptyForm: ClientForm = {
+  name: "",
+  document: "",
+  email: "",
+  phone: "",
+  mobile: "",
+  notes: "",
+};
 
 export function ClientsPage() {
   const qc = useQueryClient();
@@ -78,19 +87,11 @@ export function ClientsPage() {
 
   const save = useMutation({
     mutationFn: async (payload: ClientForm) => {
-      console.log("[ClientsPage] Salvando:", { editing: editing?.id, payload });
-      if (editing) {
-        const res = await api.put(`/clients/${editing.id}`, payload);
-        console.log("[ClientsPage] PUT response:", res.data);
-        return res.data;
-      } else {
-        const res = await api.post("/clients", payload);
-        console.log("[ClientsPage] POST response:", res.data);
-        return res.data;
-      }
+      if (editing)
+        return (await api.put(`/clients/${editing.id}`, payload)).data;
+      return (await api.post("/clients", payload)).data;
     },
-    onSuccess: (data) => {
-      console.log("[ClientsPage] Sucesso:", data);
+    onSuccess: () => {
       toast.success(
         editing
           ? "Cliente atualizado com sucesso!"
@@ -100,18 +101,15 @@ export function ClientsPage() {
       close();
     },
     onError: (err: any) => {
-      console.error("[ClientsPage] ERRO detalhado:", err);
       const status = err?.response?.status;
       const serverError = err?.response?.data?.error;
-      const details = err?.response?.data?.details;
-
-      let msg = "Erro ao salvar cliente";
-      if (status === 409) msg = "CPF/CNPJ ou Email já cadastrado.";
-      else if (status === 400 && details)
-        msg = `Validação: ${details.map((d: any) => d.message).join(", ")}`;
-      else if (serverError) msg = serverError;
-      else if (!err?.response) msg = "Backend fora do ar.";
-
+      let msg = "Erro ao salvar cliente.";
+      if (status === 409)
+        msg = serverError || "CPF/CNPJ ou Email já cadastrado.";
+      else if (status === 400)
+        msg = serverError || "Dados inválidos. Verifique os campos.";
+      else if (!err?.response)
+        msg = "Backend fora do ar. Verifique o terminal do backend.";
       toast.error(msg);
     },
   });
@@ -129,31 +127,14 @@ export function ClientsPage() {
   const close = () => {
     setOpen(false);
     setEditing(null);
-    reset({
-      name: "",
-      document: "",
-      email: "",
-      phone: "",
-      mobile: "",
-      notes: "",
-    });
+    reset(emptyForm);
   };
-
   const openNew = () => {
     setEditing(null);
-    reset({
-      name: "",
-      document: "",
-      email: "",
-      phone: "",
-      mobile: "",
-      notes: "",
-    });
+    reset(emptyForm);
     setOpen(true);
   };
-
   const openEdit = (row: any) => {
-    console.log("[ClientsPage] Abrindo edição:", row);
     setEditing(row);
     reset({
       name: row.name,
@@ -223,7 +204,7 @@ export function ClientsPage() {
                 <TableCell colSpan={5}>
                   <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
                     <Inbox className="h-10 w-10 opacity-30" />
-                    <p>Nenhum cliente encontrado.</p>
+                    <p className="text-sm">Nenhum cliente encontrado.</p>
                   </div>
                 </TableCell>
               </TableRow>
@@ -262,7 +243,7 @@ export function ClientsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-destructive"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
                         onClick={() => {
                           if (confirm("Excluir este cliente?"))
                             del.mutate(row.id);
@@ -313,10 +294,7 @@ export function ClientsPage() {
             </DialogTitle>
           </DialogHeader>
           <form
-            onSubmit={handleSubmit((v) => {
-              console.log("[ClientsPage] Submit:", v);
-              save.mutate(v);
-            })}
+            onSubmit={handleSubmit((v) => save.mutate(v))}
             className="space-y-4"
           >
             <div className="grid gap-4 sm:grid-cols-2">
@@ -331,7 +309,10 @@ export function ClientsPage() {
               </div>
               <div className="space-y-2">
                 <Label>CPF/CNPJ *</Label>
-                <Input {...register("document")} placeholder="000.000.000-00" />
+                <Input
+                  {...register("document")}
+                  placeholder="Somente números"
+                />
                 {errors.document && (
                   <p className="text-xs text-destructive">
                     {errors.document.message}
@@ -376,7 +357,7 @@ export function ClientsPage() {
                   ? "Salvando..."
                   : editing
                     ? "Atualizar"
-                    : "Criar"}
+                    : "Criar Cliente"}
               </Button>
             </DialogFooter>
           </form>

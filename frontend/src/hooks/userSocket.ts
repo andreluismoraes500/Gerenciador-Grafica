@@ -7,41 +7,38 @@ let socket: Socket | null = null;
 
 export function useSocket() {
   const user = useAuthStore(s => s.user);
-  const token = useAuthStore(s => s.token); // Captura o token do estado
+  const token = useAuthStore(s => s.token);
 
   useEffect(() => {
     if (!user || !token) return;
 
     const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:4000';
-    
-    // O segredo está aqui: enviando o token no handshake
+
     socket = io(apiUrl, {
       transports: ['websocket'],
-      auth: { token } 
+      auth: { token }, // 🔑 envia o JWT no handshake
     });
 
     socket.emit('join', `user:${user.id}`);
 
-    socket.on('connect', () => console.log('✅ Socket conectado com sucesso!'));
-    socket.on('connect_error', (err) => console.error('❌ Erro no Socket:', err.message));
+    socket.on('connect', () => console.log('✅ Socket conectado'));
+    socket.on('connect_error', (err) => console.error('❌ Socket error:', err.message));
 
-    socket.on('order:created', (order) => {
+    socket.on('order:created', (order: any) => {
       toast.success(`Novo pedido #${order.code} criado!`);
     });
-    
-    socket.on('order:status-changed', (order) => {
+    socket.on('order:status-changed', (order: any) => {
       toast.info(`Pedido #${order.code} atualizado para ${order.status}`);
     });
-    
-    socket.on('project:approved', ({ projectId }) => {
-      toast.success(`Projeto foi aprovado! 🎉`);
+    socket.on('project:approved', () => {
+      toast.success('Projeto aprovado! 🎉');
     });
 
-    return () => { 
-      socket?.disconnect(); 
+    return () => {
+      socket?.disconnect();
       socket = null;
     };
-  }, [user?.id, token]); // Re-conecta se o token mudar
+  }, [user?.id, token]);
 
   return socket;
 }
