@@ -1,9 +1,10 @@
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -24,44 +25,47 @@ import api from "@/api/client";
 const loginSchema = z.object({
   email: z.string().email("Email inválido"),
   password: z.string().min(6, "Mínimo 6 caracteres"),
-  rememberMe: z.boolean().optional(),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const setAuth = useAuthStore((state) => state.setAuth);
+  const setAuth = useAuthStore((s) => s.setAuth);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
   const {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<LoginForm>({
-    resolver: zodResolver(loginSchema),
-  });
+  } = useForm<LoginForm>({ resolver: zodResolver(loginSchema) });
 
   const mutation = useMutation({
     mutationFn: async (data: LoginForm) => {
-      const res = await api.post("/auth/login", data);
+      console.log("[LOGIN] Enviando requisição para o backend...");
+      const res = await api.post("/auth/login", { ...data, rememberMe });
       return res.data;
     },
     onSuccess: (data) => {
       setAuth(data.user, data.token, data.refreshToken);
-      toast.success("Login realizado com sucesso!");
+      toast.success(`Bem-vindo, ${data.user.name}!`);
       navigate("/");
     },
     onError: (error: any) => {
-      // 🚨 DIAGNÓSTICO: Força o erro a aparecer na tela
-      console.error("ERRO DETALHADO NO CONSOLE:", error);
-      const msg =
-        error?.response?.data?.error ||
-        error?.message ||
-        "Erro de conexão com o servidor.";
-      alert(
-        "🚨 ERRO NO LOGIN:\n\n" +
-          msg +
-          "\n\n(Verifique o terminal do Backend e o Console F12)",
-      );
+      console.error("[LOGIN] Erro:", error);
+      let msg: string;
+      if (!error?.response) {
+        msg =
+          "Não foi possível conectar ao backend. Verifique se o servidor está rodando (npm run dev na pasta backend).";
+      } else if (error.response.status === 401) {
+        msg = "Email ou senha inválidos.";
+      } else if (error.response.status === 429) {
+        msg = "Muitas tentativas de login. Aguarde alguns minutos.";
+      } else {
+        msg = error.response.data?.error || "Erro ao fazer login.";
+      }
+      setFormError(msg);
       toast.error(msg);
     },
   });
@@ -80,8 +84,21 @@ export function LoginPage() {
             </CardTitle>
             <CardDescription>Entre com suas credenciais</CardDescription>
           </CardHeader>
-          <form onSubmit={handleSubmit((data) => mutation.mutate(data))}>
+
+          <form
+            onSubmit={handleSubmit((data) => {
+              setFormError(null);
+              mutation.mutate(data);
+            })}
+          >
             <CardContent className="space-y-4">
+              {formError && (
+                <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -94,6 +111,7 @@ export function LoginPage() {
                   <p className="text-sm text-red-500">{errors.email.message}</p>
                 )}
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="password">Senha</Label>
                 <Input
@@ -108,11 +126,17 @@ export function LoginPage() {
                   </p>
                 )}
               </div>
+
               <div className="flex items-center space-x-2">
-                <Checkbox id="rememberMe" {...register("rememberMe")} />
+                <Checkbox
+                  id="rememberMe"
+                  checked={rememberMe}
+                  onCheckedChange={(v) => setRememberMe(v === true)}
+                />
                 <Label htmlFor="rememberMe">Lembrar-me</Label>
               </div>
             </CardContent>
+
             <CardFooter className="flex flex-col space-y-4">
               <Button
                 type="submit"
@@ -122,7 +146,7 @@ export function LoginPage() {
                 {mutation.isPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                Entrar
+                {mutation.isPending ? "Entrando..." : "Entrar"}
               </Button>
               <div className="text-sm text-center">
                 <Link

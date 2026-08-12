@@ -3,16 +3,16 @@ import { useAuthStore } from '@/store/auth.store';
 import { toast } from 'sonner';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:4000/api',
+  baseURL: (import.meta as any).env.VITE_API_URL || 'http://localhost:4000/api',
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' }
 });
 
 let isRefreshing = false;
-let failedQueue: Array<{ resolve: (value: unknown) => void; reject: (reason?: any) => void }> = [];
+let failedQueue: Array<{ resolve: (v: unknown) => void; reject: (r?: any) => void }> = [];
 
 const processQueue = (error: any) => {
-  failedQueue.forEach(p => error ? p.reject(error) : p.resolve(undefined));
+  failedQueue.forEach(p => (error ? p.reject(error) : p.resolve(undefined)));
   failedQueue = [];
 };
 
@@ -26,7 +26,9 @@ api.interceptors.response.use(
   res => res,
   async (error: AxiosError) => {
     const original = error.config!;
-    if (error.response?.status === 401 && !(original as any)._retry) {
+    const isAuthRoute = original.url?.includes('/auth/'); // 🚨 NÃO intercepta login/refresh
+
+    if (error.response?.status === 401 && !isAuthRoute && !(original as any)._retry) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => failedQueue.push({ resolve, reject }))
           .then(() => api(original));
@@ -45,9 +47,11 @@ api.interceptors.response.use(
         useAuthStore.getState().logout();
         toast.error('Sessão expirada. Faça login novamente.');
         return Promise.reject(err);
-      } finally { isRefreshing = false; }
+      } finally {
+        isRefreshing = false;
+      }
     }
-    return Promise.reject(error);
+    return Promise.reject(error); // ← erros de login agora chegam no onError da página
   }
 );
 

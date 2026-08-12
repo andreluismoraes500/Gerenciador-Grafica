@@ -1,33 +1,59 @@
-@layer utilities {
-  .animate-in {
-    animation-duration: 150ms;
-    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-    animation-fill-mode: forwards;
-  }
-  .animate-out {
-    animation-duration: 150ms;
-    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-    animation-fill-mode: forwards;
-  }
-  .fade-in-0 { animation-name: fadeIn; }
-  .fade-out-0 { animation-name: fadeOut; }
-  .zoom-in-95 { animation-name: zoomIn; }
-  .zoom-out-95 { animation-name: zoomOut; }
-  .slide-in-from-top-2 { animation-name: slideInFromTop; }
-  .slide-in-from-bottom-2 { animation-name: slideInFromBottom; }
-  .slide-in-from-left-1\/2 { animation-name: slideInFromLeft; }
-  .slide-out-to-left-1\/2 { animation-name: slideOutToLeft; }
-  .slide-in-from-top-\[48\%\] { animation-name: slideInFromTop48; }
-  .slide-out-to-top-\[48\%\] { animation-name: slideOutToTop48; }
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
-  @keyframes zoomIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-  @keyframes zoomOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.95); } }
-  @keyframes slideInFromTop { from { transform: translateY(-0.5rem); } to { transform: translateY(0); } }
-  @keyframes slideInFromBottom { from { transform: translateY(0.5rem); } to { transform: translateY(0); } }
-  @keyframes slideInFromLeft { from { transform: translateX(-50%); } to { transform: translateX(-50%) translateY(-50%); } }
-  @keyframes slideOutToLeft { from { transform: translateX(-50%) translateY(-50%); } to { transform: translateX(-50%); } }
-  @keyframes slideInFromTop48 { from { transform: translate(-50%, -48%); } to { transform: translate(-50%, -50%); } }
-  @keyframes slideOutToTop48 { from { transform: translate(-50%, -50%); } to { transform: translate(-50%, -48%); } }
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 234 89% 58%;
+    --primary-foreground: 210 20% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 234 89% 58%;
+    --radius: 0.6rem;
+  }
+
+  .dark {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 234 89% 64%;
+    --primary-foreground: 210 20% 98%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 234 89% 64%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }

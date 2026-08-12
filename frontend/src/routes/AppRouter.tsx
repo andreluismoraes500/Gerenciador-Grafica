@@ -1,5 +1,4 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { Toaster } from "sonner";
 import { useAuthStore } from "@/store/auth.store";
 
 // Layouts
@@ -10,7 +9,7 @@ import AuthLayout from "@/components/layout/AuthLayout";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
 
-// Páginas do Sistema (Features)
+// Páginas do Sistema
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { ClientsPage } from "@/features/clients/ClientsPage";
 import { ProductsPage } from "@/features/products/ProductsPage";
@@ -28,15 +27,17 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 
 export default function AppRouter() {
   return (
-    <BrowserRouter>
-      <Toaster position="top-right" richColors theme="system" />
-
+    <BrowserRouter
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <Routes>
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
         </Route>
-
         <Route
           element={
             <ProtectedRoute>
@@ -54,7 +55,6 @@ export default function AppRouter() {
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
-
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
