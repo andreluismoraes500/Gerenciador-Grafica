@@ -44,7 +44,8 @@ export const clientsService = {
   },
 
   async create(data: any, _createdBy: string) {
-    // 1) Bloqueia duplicados na tabela Client
+    console.log('[clients.service] CREATE v3 chamado para:', data?.email);
+
     const existing = await prisma.client.findFirst({
       where: { OR: [{ email: data.email }, { document: data.document }] },
     });
@@ -52,41 +53,31 @@ export const clientsService = {
       throw new AppError('Client with this email or document already exists', 409);
     }
 
-    // 2) Reaproveita usuário órfão de tentativa anterior (se existir)
-    let user = await prisma.user.findUnique({ where: { email: data.email } });
-    if (user && user.role !== 'CLIENT') {
-      throw new AppError('This email belongs to a system user', 409);
-    }
+    const tempPassword = randomBytes(8).toString('hex');
+    const passwordHash = await bcrypt.hash(tempPassword, 12);
+    const { address, ...clientData } = data;
 
-    const createdNow = !user;
-    if (!user) {
-      const tempPassword = randomBytes(8).toString('hex');
-      const passwordHash = await bcrypt.hash(tempPassword, 12);
-      user = await prisma.user.create({
-        data: { name: data.name, email: data.email, password: passwordHash, role: 'CLIENT' },
-      });
-    }
-
-    // 3) Cria o Client; se falhar, desfaz o User criado agora (nunca mais órfão)
-    try {
-      const { address, ...clientData } = data;
-      const client = await prisma.client.create({
-        data: {
-          ...clientData,
-          userId: user.id,
-          birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
-          address: address ? { create: address } : undefined,
+    //  OPERAÇÃO ÚNICA E ATÔMICA: Client + User juntos.
+    // Se qualquer coisa falhar, NADA é criado (nunca mais usuário órfão).
+    const client = await prisma.client.create({
+      data: {
+        ...clientData,
+        birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
+        user: {
+          create: {
+            name: data.name,
+            email: data.email,
+            password: passwordHash,
+            role: 'CLIENT',
+          },
         },
-        include: { address: true },
-      });
-      return client;
-    } catch (err) {
-      console.error('[clients.service] client.create failed:', err);
-      if (createdNow) {
-        await prisma.user.delete({ where: { id: user.id } }).catch(() => {});
-      }
-      throw err;
-    }
+        address: address ? { create: address } : undefined,
+      },
+      include: { address: true, user: true },
+    });
+
+    console.log('[clients.service] CREATE v3 OK →', client.id);
+    return client;
   },
 
   async update(id: string, data: any, _updatedBy: string) {
