@@ -32,7 +32,6 @@ type LoginForm = z.infer<typeof loginSchema>;
 export function LoginPage() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
-
   const {
     register,
     handleSubmit,
@@ -51,8 +50,19 @@ export function LoginPage() {
       toast.success("Login realizado com sucesso!");
       navigate("/");
     },
-    onError: () => {
-      toast.error("Email ou senha incorretos");
+    onError: (error: any) => {
+      // 🚨 DIAGNÓSTICO: Força o erro a aparecer na tela
+      console.error("ERRO DETALHADO NO CONSOLE:", error);
+      const msg =
+        error?.response?.data?.error ||
+        error?.message ||
+        "Erro de conexão com o servidor.";
+      alert(
+        "🚨 ERRO NO LOGIN:\n\n" +
+          msg +
+          "\n\n(Verifique o terminal do Backend e o Console F12)",
+      );
+      toast.error(msg);
     },
   });
 
@@ -77,7 +87,7 @@ export function LoginPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="seu@email.com"
+                  placeholder="admin@printflow.com"
                   {...register("email")}
                 />
                 {errors.email && (
