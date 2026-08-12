@@ -7,29 +7,41 @@ let socket: Socket | null = null;
 
 export function useSocket() {
   const user = useAuthStore(s => s.user);
+  const token = useAuthStore(s => s.token); // Captura o token do estado
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !token) return;
 
     const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:4000';
+    
+    // O segredo está aqui: enviando o token no handshake
     socket = io(apiUrl, {
-      transports: ['websocket'], withCredentials: true
+      transports: ['websocket'],
+      auth: { token } 
     });
 
     socket.emit('join', `user:${user.id}`);
 
+    socket.on('connect', () => console.log('✅ Socket conectado com sucesso!'));
+    socket.on('connect_error', (err) => console.error('❌ Erro no Socket:', err.message));
+
     socket.on('order:created', (order) => {
       toast.success(`Novo pedido #${order.code} criado!`);
     });
+    
     socket.on('order:status-changed', (order) => {
       toast.info(`Pedido #${order.code} atualizado para ${order.status}`);
     });
-    socket.on('project:approval', (project) => {
-      toast.success(`Projeto "${project.title}" foi aprovado! 🎉`);
+    
+    socket.on('project:approved', ({ projectId }) => {
+      toast.success(`Projeto foi aprovado! 🎉`);
     });
 
-    return () => { socket?.disconnect(); };
-  }, [user?.id]);
+    return () => { 
+      socket?.disconnect(); 
+      socket = null;
+    };
+  }, [user?.id, token]); // Re-conecta se o token mudar
 
   return socket;
 }

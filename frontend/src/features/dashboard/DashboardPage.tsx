@@ -14,6 +14,7 @@ import { StatusPieChart } from "./StatusPieChart";
 import { TopProducts } from "./TopProducts";
 import { ActivityFeed } from "./ActivityFeed";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils"; // ✅ Import correto
 import api from "@/api/client";
 
 const fadeUp = {
@@ -35,24 +36,28 @@ export function DashboardPage() {
           icon: DollarSign,
           trend: data.revenueDelta,
           color: "text-green-600",
+          bg: "bg-green-50 dark:bg-green-950/30",
         },
         {
           title: "Pedidos Totais",
           value: data.totalOrders,
           icon: ShoppingCart,
           color: "text-blue-600",
+          bg: "bg-blue-50 dark:bg-blue-950/30",
         },
         {
           title: "Clientes Ativos",
           value: data.activeClients,
           icon: Users,
           color: "text-purple-600",
+          bg: "bg-purple-50 dark:bg-purple-950/30",
         },
         {
           title: "Projetos em Andamento",
           value: data.inProgressProjects,
           icon: Palette,
           color: "text-orange-600",
+          bg: "bg-orange-50 dark:bg-orange-950/30",
         },
       ]
     : [];
@@ -60,7 +65,7 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Dashboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">
           Bem-vindo de volta! Aqui está o resumo do seu estúdio.
         </p>
@@ -77,18 +82,18 @@ export function DashboardPage() {
                 {...fadeUp}
                 transition={{ delay: i * 0.05 }}
               >
-                <Card>
+                <Card className="hover:shadow-md transition-shadow">
                   <CardContent className="pt-6">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-muted-foreground">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-muted-foreground truncate">
                           {card.title}
                         </p>
                         <p className="text-2xl font-bold mt-1">{card.value}</p>
                         {card.trend !== undefined && (
                           <div
                             className={cn(
-                              "flex items-center gap-1 text-xs mt-1",
+                              "flex items-center gap-1 text-xs mt-1 font-medium",
                               card.trend >= 0
                                 ? "text-green-600"
                                 : "text-red-600",
@@ -103,7 +108,9 @@ export function DashboardPage() {
                           </div>
                         )}
                       </div>
-                      <card.icon className={cn("h-10 w-10", card.color)} />
+                      <div className={cn("p-3 rounded-xl", card.bg)}>
+                        <card.icon className={cn("h-6 w-6", card.color)} />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -150,8 +157,4 @@ export function DashboardPage() {
       </div>
     </div>
   );
-}
-
-function cn(...args: any[]) {
-  return args.filter(Boolean).join(" ");
 }
