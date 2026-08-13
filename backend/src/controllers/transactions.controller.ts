@@ -44,7 +44,7 @@ export const transactionsController = {
       res.status(204).send();
     } catch (e) { next(e); }
   },
-  async getSummary(req: AuthRequest, res: Response, next: NextFunction) {
+  async getSummary(_req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const summary = await transactionsService.getSummary();
       res.json(summary);
