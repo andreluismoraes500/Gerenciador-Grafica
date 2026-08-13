@@ -3,7 +3,7 @@ import { dashboardService } from '../services/dashboard.service';
 import { AuthRequest } from '../middlewares/auth';
 
 export const dashboardController = {
-  async getMetrics(req: AuthRequest, res: Response, next: NextFunction) {
+  async getMetrics(_req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const metrics = await dashboardService.getMetrics();
       res.json(metrics);
@@ -27,7 +27,7 @@ export const dashboardController = {
     } catch (e) { next(e); }
   },
 
-  async getStatusDistribution(req: AuthRequest, res: Response, next: NextFunction) {
+  async getStatusDistribution(_req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const distribution = await dashboardService.getStatusDistribution();
       res.json(distribution);
@@ -50,7 +50,7 @@ export const dashboardController = {
     } catch (e) { next(e); }
   },
 
-  async getLowStockAlerts(req: AuthRequest, res: Response, next: NextFunction) {
+  async getLowStockAlerts(_req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const alerts = await dashboardService.getLowStockAlerts();
       res.json(alerts);
