@@ -38,13 +38,15 @@ export const dashboardService = {
 
   async getMonthlyRevenue(months = 12) {
     const results = await prisma.$queryRawUnsafe(`
-      SELECT DATE_TRUNC('month', "createdAt") as month, SUM(total) as total, COUNT(*) as orders
+      SELECT DATE_TRUNC('month', "createdAt") as month,
+             COALESCE(SUM(total), 0)::float as total,
+             COUNT(*)::int as orders
       FROM "Order"
       WHERE "paymentStatus" = 'PAID' AND "createdAt" >= NOW() - INTERVAL '${months} months'
       GROUP BY month ORDER BY month;
     `);
     return results;
-  },
+},
 
    async getTopProducts(limit = 10, days = 30) {
     const since = subDays(new Date(), days);

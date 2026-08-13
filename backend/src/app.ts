@@ -24,6 +24,8 @@ import { notificationsRoutes } from './routes/notifications.routes';
 import { transactionsRoutes } from './routes/transactions.routes';
 import { stockItemsRoutes } from './routes/stockItems.routes';
 
+(BigInt.prototype as any).toJSON = function () { return Number(this); };
+
 
 const app = express();
 const server = createServer(app);

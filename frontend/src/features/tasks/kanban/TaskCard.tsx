@@ -1,9 +1,15 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { motion } from "framer-motion";
-import { Calendar, GripVertical, Pencil, Trash2, User } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/utils";
+import {
+  Calendar,
+  CheckCircle2,
+  GripVertical,
+  Pencil,
+  Trash2,
+  User,
+} from "lucide-react";
+import { cn, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 const priorityConfig: Record<
@@ -51,9 +57,15 @@ interface TaskCardProps {
   task: Task;
   onEdit: (task: Task) => void;
   onDelete: (id: string) => void;
+  onComplete?: (id: string) => void; // ✅ dar baixa
 }
 
-export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
+export function TaskCard({
+  task,
+  onEdit,
+  onDelete,
+  onComplete,
+}: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -63,9 +75,11 @@ export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
     isDragging,
   } = useSortable({ id: task.id });
 
+  // 🖱️ touchAction none + listeners no CARD INTEIRO (arrastra de qualquer lugar)
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+    touchAction: "none",
   };
 
   const priority = priorityConfig[task.priority] || priorityConfig.NORMAL;
@@ -78,6 +92,8 @@ export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
     <motion.div
       ref={setNodeRef}
       style={style}
+      {...attributes}
+      {...listeners}
       layout
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
@@ -88,16 +104,11 @@ export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
         isDragging && "opacity-50 shadow-xl ring-2 ring-primary/50 z-50",
       )}
     >
-      {/* Drag handle */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="absolute top-2 right-2 p-1 rounded hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
-      >
+      {/* Grip agora é só visual */}
+      <div className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
         <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
       </div>
 
-      {/* Priority badge */}
       <div className="flex items-center gap-2 mb-2">
         <span
           className={cn(
@@ -115,26 +126,20 @@ export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
         )}
       </div>
 
-      {/* Title */}
       <h4 className="text-sm font-medium leading-tight mb-1 pr-6">
         {task.title}
       </h4>
-
-      {/* Description */}
       {task.description && (
         <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
           {task.description}
         </p>
       )}
-
-      {/* Project tag */}
       {task.project && (
         <span className="inline-block px-2 py-0.5 text-[10px] bg-primary/10 text-primary rounded-full mb-2">
           {task.project.title}
         </span>
       )}
 
-      {/* Footer */}
       <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
         <div className="flex items-center gap-2">
           {task.assignee && (
@@ -167,8 +172,18 @@ export function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
           )}
         </div>
 
-        {/* Actions */}
         <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onComplete && task.status !== "DONE" && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-green-600"
+              title="Dar baixa (concluir)"
+              onClick={() => onComplete(task.id)}
+            >
+              <CheckCircle2 className="h-3 w-3" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
