@@ -10,6 +10,7 @@ import {
   CheckSquare,
   Settings,
   ChevronLeft,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
@@ -24,6 +25,8 @@ const items = [
   { to: "/suppliers", icon: Truck, label: "Fornecedores" },
   { to: "/tasks", icon: CheckSquare, label: "Tarefas" },
   { to: "/settings", icon: Settings, label: "Configurações" },
+  { to: "/stock", icon: Package, label: "Insumos" }, // Ou Box
+  { to: "/transactions", icon: Wallet, label: "Financeiro" },
 ];
 
 export function Sidebar({

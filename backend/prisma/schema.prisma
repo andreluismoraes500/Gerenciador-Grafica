@@ -171,11 +171,12 @@ model Client {
     userId String @unique // o usuário correspondente, se cliente
     user   User   @relation(fields: [userId], references: [id])
 
-    projects  Project[]
-    orders    Order[]
-    quotes    Quote[]
-    createdAt DateTime  @default(now())
-    updatedAt DateTime  @updatedAt
+    projects     Project[]
+    orders       Order[]
+    quotes       Quote[]
+    createdAt    DateTime      @default(now())
+    updatedAt    DateTime      @updatedAt
+    transactions Transaction[]
 
     @@index([email])
     @@index([document])
@@ -351,8 +352,10 @@ model Order {
     deliveredAt     DateTime?
     paidAt          DateTime?
 
-    invoices Invoice[]
-    quotes   Quote[]
+    invoices       Invoice[]
+    quotes         Quote[]
+    transactions   Transaction[]
+    productionStep ProductionStep @default(PRE_PRESS)
 }
 
 model OrderItem {
@@ -414,17 +417,18 @@ model QuoteItem {
 
 // ---------- SUPPLIERS & PURCHASES ----------
 model Supplier {
-    id        String     @id @default(cuid())
-    name      String
-    document  String?    @unique
-    email     String?
-    phone     String?
-    contact   String?
-    address   String?
-    notes     String?
-    isActive  Boolean    @default(true)
-    purchases Purchase[]
-    createdAt DateTime   @default(now())
+    id           String        @id @default(cuid())
+    name         String
+    document     String?       @unique
+    email        String?
+    phone        String?
+    contact      String?
+    address      String?
+    notes        String?
+    isActive     Boolean       @default(true)
+    purchases    Purchase[]
+    createdAt    DateTime      @default(now())
+    transactions Transaction[]
 }
 
 model Purchase {
@@ -491,4 +495,63 @@ model CompanySettings {
     invoicePrefix String  @default("NF")
     quotePrefix   String  @default("ORC")
     orderPrefix   String  @default("PED")
+}
+
+enum TransactionType {
+    INCOME
+    EXPENSE
+}
+
+enum TransactionStatus {
+    PENDING
+    PAID
+    OVERDUE
+    CANCELLED
+}
+
+enum ProductionStep {
+    PRE_PRESS // Pré-impressão (Arte-final/Prova)
+    PRINTING // Impressão
+    FINISHING // Acabamento
+    QUALITY_CHECK // Conferência
+    SHIPPING // Expedição
+}
+
+// ---------- NOVOS MODELS ----------
+model Transaction {
+    id          String            @id @default(cuid())
+    type        TransactionType
+    category    String // Ex: "Venda de Pedido", "Compra de Papel", "Impostos"
+    description String?
+    amount      Float
+    dueDate     DateTime
+    paidAt      DateTime?
+    status      TransactionStatus @default(PENDING)
+
+    // Vínculos opcionais
+    orderId    String?
+    order      Order?    @relation(fields: [orderId], references: [id])
+    supplierId String?
+    supplier   Supplier? @relation(fields: [supplierId], references: [id])
+    clientId   String?
+    client     Client?   @relation(fields: [clientId], references: [id])
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([dueDate])
+    @@index([status])
+}
+
+model StockItem {
+    id        String   @id @default(cuid())
+    name      String // Ex: "Papel Couché 150g", "Tinta Cyan"
+    category  String? // Ex: "Papel", "Tinta", "Chapa"
+    unit      String // Ex: "kg", "litros", "folhas", "m2"
+    quantity  Float    @default(0)
+    minStock  Float    @default(0)
+    unitCost  Float    @default(0)
+    isActive  Boolean  @default(true)
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
 }

@@ -138,8 +138,29 @@ export const ordersService = {
   },
 
   async updateStatus(id: string, status: string, _updatedBy: string) {
-    const existing = await prisma.order.findUnique({ where: { id } });
+    const existing = await prisma.order.findUnique({
+      where: { id },
+      include: { items: true },
+    });
     if (!existing) throw new AppError('Order not found', 404);
+
+    if (status === 'IN_PRODUCTION' && existing.status !== 'IN_PRODUCTION') {
+      // 🚀 AUTOMAÇÃO: Baixa de insumos (Placeholder para Ficha Técnica/BOM)
+      // Em produção, você cruzaria o OrderItem com uma tabela de Composição.
+      // Aqui deduzimos um genérico "Papel" para demonstrar o fluxo.
+      const prismaClient = prisma as any;
+      const paper = await prismaClient.stockItem?.findFirst?.({
+        where: { name: { contains: 'Papel' } },
+      });
+
+      if (paper) {
+        const totalSheets = existing.items.reduce((sum: number, i: any) => sum + i.quantity * 100, 0); // Ex: 100 folhas por item
+        await prismaClient.stockItem.update({
+          where: { id: paper.id },
+          data: { quantity: { decrement: totalSheets } },
+        });
+      }
+    }
 
     return prisma.order.update({
       where: { id },
@@ -160,6 +181,24 @@ export const ordersService = {
     // Preenche paidAt quando marca como PAID
     if (paymentStatus === 'PAID') {
       data.paidAt = new Date();
+
+      await prisma.$transaction(async (tx) => {
+        const txClient = tx as any;
+
+        await txClient.transaction?.create({
+          data: {
+            type: 'INCOME',
+            category: 'Venda de Pedido',
+            description: `Receita do Pedido ${existing.code}`,
+            amount: existing.total,
+            dueDate: new Date(),
+            paidAt: new Date(),
+            status: 'PAID',
+            orderId: existing.id,
+            clientId: existing.clientId,
+          },
+        });
+      });
     }
 
     return prisma.order.update({
