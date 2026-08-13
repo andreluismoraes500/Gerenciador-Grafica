@@ -1,8 +1,14 @@
 import { Response, NextFunction } from 'express';
 import { quotesService } from '../services/quotes.service';
+import { notificationsService } from '../services/notifications.service';
 import { AuthRequest } from '../middlewares/auth';
 import { createQuoteSchema, updateQuoteSchema } from '../validators/quote.validator';
 import { logActivity } from '../services/activity.service';
+
+const getParamId = (req: AuthRequest): string => {
+  const id = req.params.id;
+  return Array.isArray(id) ? id[0] ?? '' : id ?? '';
+};
 
 export const quotesController = {
   async list(req: AuthRequest, res: Response, next: NextFunction) {
@@ -16,7 +22,7 @@ export const quotesController = {
   },
 
   async getById(req: AuthRequest, res: Response, next: NextFunction) {
-    try { res.json(await quotesService.getById(req.params.id)); } catch (e) { next(e); }
+    try { res.json(await quotesService.getById(getParamId(req))); } catch (e) { next(e); }
   },
 
   async create(req: AuthRequest, res: Response, next: NextFunction) {
@@ -31,14 +37,14 @@ export const quotesController = {
   async update(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const data = updateQuoteSchema.parse(req.body);
-      const quote = await quotesService.update(req.params.id, data);
+      const quote = await quotesService.update(getParamId(req), data);
       res.json(quote);
     } catch (e) { next(e); }
   },
 
   async delete(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      await quotesService.delete(req.params.id);
+      await quotesService.delete(getParamId(req));
       res.status(204).send();
     } catch (e) { next(e); }
   },
@@ -46,16 +52,17 @@ export const quotesController = {
   async updateStatus(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { status } = req.body;
-      const quote = await quotesService.updateStatus(req.params.id, status);
+      const quote = await quotesService.updateStatus(getParamId(req), status);
       res.json(quote);
     } catch (e) { next(e); }
   },
 
   async generatePDF(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const pdf = await quotesService.generatePDF(req.params.id);
+      const quoteId = getParamId(req);
+      const pdf = await quotesService.generatePDF(quoteId);
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="orcamento-${req.params.id}.pdf"`);
+      res.setHeader('Content-Disposition', `inline; filename="orcamento-${quoteId}.pdf"`);
       res.send(pdf);
     } catch (e) { next(e); }
   },
@@ -63,7 +70,7 @@ export const quotesController = {
   async sendByEmail(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { to } = req.body;
-      await quotesService.sendByEmail(req.params.id, to);
+      await quotesService.sendByEmail(getParamId(req), to);
       res.json({ message: 'Quote sent successfully' });
     } catch (e) { next(e); }
   },
@@ -71,8 +78,17 @@ export const quotesController = {
   async convertToOrder(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { paymentMethod } = req.body;
-      const order = await quotesService.convertToOrder(req.params.id, req.user!.id, paymentMethod);
+      const order = await quotesService.convertToOrder(getParamId(req), req.user!.id, paymentMethod);
+
+      // 🔔 Notificação: avisa equipe que orçamento virou pedido
+      await notificationsService.notifyTeam(req.user!.id, {
+        title: 'Orçamento convertido em pedido',
+        message: `Pedido ${order.code} gerado a partir do orçamento — R$ ${order.total.toFixed(2)}`,
+        type: 'SUCCESS',
+        metadata: { entity: 'Order', entityId: order.id, route: '/orders' },
+      });
+
       res.status(201).json(order);
     } catch (e) { next(e); }
-  }
+  },
 };
