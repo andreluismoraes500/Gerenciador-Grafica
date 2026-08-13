@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getRoleLabel } from "@/lib/utils";
 
 interface TeamUser {
   id: string;
@@ -38,7 +39,7 @@ interface TeamUser {
 }
 
 const ROLE_OPTIONS = [
-  { value: "ADMIN", label: "Admin" },
+  { value: "ADMIN", label: "Administrador" },
   { value: "DESIGNER", label: "Designer" },
   { value: "ATTENDANT", label: "Atendente" },
 ];
@@ -51,14 +52,15 @@ export function SettingsPage() {
   });
   const { data: users, isLoading: usersLoading } = useQuery({
     queryKey: ["users"],
-    queryFn: () => api.get("/settings/users").then((r) => r.data as TeamUser[]),
+    queryFn: () =>
+      api
+        .get("/settings/users?includeClients=false")
+        .then((r) => r.data as TeamUser[]),
   });
-
   const { register, handleSubmit, reset } = useForm<any>();
   useEffect(() => {
     if (company) reset(company);
   }, [company, reset]);
-
   const saveMut = useMutation({
     mutationFn: (data: any) => api.put("/settings/company", data),
     onSuccess: () => {
@@ -68,7 +70,6 @@ export function SettingsPage() {
     onError: () => toast.error("Erro ao salvar."),
   });
 
-  // ---- Gestão de usuários ----
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<TeamUser | null>(null);
   const {
@@ -76,23 +77,20 @@ export function SettingsPage() {
     handleSubmit: handleSubmitUser,
     reset: resetUserForm,
   } = useForm<any>();
-
   function openCreateUser() {
     setEditingUser(null);
     resetUserForm({ name: "", email: "", password: "", role: "ATTENDANT" });
     setUserDialogOpen(true);
   }
-
   function openEditUser(u: TeamUser) {
     setEditingUser(u);
     resetUserForm({ name: u.name, email: u.email, password: "", role: u.role });
     setUserDialogOpen(true);
   }
-
   const saveUserMut = useMutation({
     mutationFn: (data: any) => {
       const payload = { ...data };
-      if (!payload.password) delete payload.password; // não sobrescreve senha em branco
+      if (!payload.password) delete payload.password;
       return editingUser
         ? api.put(`/settings/users/${editingUser.id}`, payload)
         : api.post("/settings/users", payload);
@@ -106,23 +104,30 @@ export function SettingsPage() {
       toast.error(err?.response?.data?.message || "Erro ao salvar usuário.");
     },
   });
-
   const deleteUserMut = useMutation({
     mutationFn: (id: string) => api.delete(`/settings/users/${id}`),
     onSuccess: (res) => {
-      const data = res.data as { deleted?: boolean; deactivated?: boolean; reason?: string };
+      const data = res.data as {
+        deleted?: boolean;
+        deactivated?: boolean;
+        reason?: string;
+      };
       if (data?.deactivated) {
-        toast.success(data.reason || "Usuário desativado (possui histórico vinculado).");
+        toast.success(
+          data.reason || "Usuário desativado (possui histórico vinculado).",
+        );
       } else {
         toast.success("Usuário excluído!");
       }
       qc.invalidateQueries({ queryKey: ["users"] });
     },
     onError: (err: any) => {
-      toast.error(err?.response?.data?.message || "Não foi possível excluir este usuário.");
+      toast.error(
+        err?.response?.data?.message ||
+          "Não foi possível excluir este usuário.",
+      );
     },
   });
-
   function handleDeleteUser(u: TeamUser) {
     if (u.client) {
       toast.error(
@@ -130,17 +135,18 @@ export function SettingsPage() {
       );
       return;
     }
-    if (!window.confirm(`Tem certeza que deseja excluir o usuário "${u.name}"?`)) return;
+    if (
+      !window.confirm(`Tem certeza que deseja excluir o usuário "${u.name}"?`)
+    )
+      return;
     deleteUserMut.mutate(u.id);
   }
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Configurações</h1>
         <p className="text-muted-foreground">Dados da empresa e equipe</p>
       </div>
-
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -186,7 +192,6 @@ export function SettingsPage() {
             )}
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -215,20 +220,15 @@ export function SettingsPage() {
                 <TableBody>
                   {(users ?? []).map((u) => (
                     <TableRow key={u.id}>
-                      <TableCell className="font-medium">
-                        {u.name}
-                        {u.client && (
-                          <Badge variant="outline" className="ml-2 text-xs">
-                            Cliente
-                          </Badge>
-                        )}
-                      </TableCell>
+                      <TableCell className="font-medium">{u.name}</TableCell>
                       <TableCell className="text-muted-foreground">
                         {u.email}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={u.role === "ADMIN" ? "default" : "info"}>
-                          {u.role}
+                        <Badge
+                          variant={u.role === "ADMIN" ? "default" : "info"}
+                        >
+                          {getRoleLabel(u.role)}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -259,7 +259,10 @@ export function SettingsPage() {
                   ))}
                   {(users ?? []).length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                      <TableCell
+                        colSpan={5}
+                        className="text-center text-muted-foreground"
+                      >
                         Nenhum usuário cadastrado.
                       </TableCell>
                     </TableRow>
@@ -270,11 +273,12 @@ export function SettingsPage() {
           </CardContent>
         </Card>
       </div>
-
       <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingUser ? "Editar usuário" : "Novo usuário"}</DialogTitle>
+            <DialogTitle>
+              {editingUser ? "Editar usuário" : "Novo usuário"}
+            </DialogTitle>
           </DialogHeader>
           <form
             onSubmit={handleSubmitUser((v) => saveUserMut.mutate(v))}
@@ -286,15 +290,23 @@ export function SettingsPage() {
             </div>
             <div className="space-y-2">
               <Label>Email *</Label>
-              <Input type="email" {...registerUser("email", { required: true })} />
+              <Input
+                type="email"
+                {...registerUser("email", { required: true })}
+              />
             </div>
             <div className="space-y-2">
               <Label>Perfil *</Label>
-              <Select options={ROLE_OPTIONS} {...registerUser("role", { required: true })} />
+              <Select
+                options={ROLE_OPTIONS}
+                {...registerUser("role", { required: true })}
+              />
             </div>
             <div className="space-y-2">
               <Label>
-                {editingUser ? "Nova senha (deixe em branco para manter)" : "Senha *"}
+                {editingUser
+                  ? "Nova senha (deixe em branco para manter)"
+                  : "Senha *"}
               </Label>
               <Input
                 type="password"

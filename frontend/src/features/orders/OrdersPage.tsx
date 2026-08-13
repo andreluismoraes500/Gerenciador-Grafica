@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Search, Inbox } from "lucide-react";
+import { Plus, Search, Inbox, CheckCircle } from "lucide-react";
 import api from "@/api/client";
 import { useList } from "@/components/crud/CrudPage";
 import { ItemsEditor, ItemRow } from "@/components/crud/ItemsEditor";
@@ -26,7 +26,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatDate,
+  getStatusLabel,
+  getPaymentMethodLabel,
+} from "@/lib/utils";
 
 const STATUSES = [
   "BUDGET",
@@ -37,6 +42,8 @@ const STATUSES = [
   "CANCELLED",
 ];
 
+const PAYMENT_STATUSES = ["PENDING", "PAID", "REFUNDED", "CANCELLED"];
+
 export function OrdersPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
@@ -45,7 +52,6 @@ export function OrdersPage() {
   const [paymentMethod, setPaymentMethod] = useState("PIX");
   const [dueDate, setDueDate] = useState("");
   const [items, setItems] = useState<ItemRow[]>([]);
-
   const { data, isLoading } = useQuery({
     queryKey: ["orders", search],
     queryFn: () =>
@@ -64,6 +70,24 @@ export function OrdersPage() {
       qc.invalidateQueries({ queryKey: ["orders"] });
     },
   });
+
+  const paymentMut = useMutation({
+    mutationFn: ({
+      id,
+      paymentStatus,
+    }: {
+      id: string;
+      paymentStatus: string;
+    }) => api.patch(`/orders/${id}/payment`, { paymentStatus }),
+    onSuccess: () => {
+      toast.success("Pagamento atualizado!");
+      qc.invalidateQueries({ queryKey: ["orders"] });
+    },
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.error || "Erro ao atualizar pagamento.");
+    },
+  });
+
   const createMut = useMutation({
     mutationFn: (payload: any) => api.post("/orders", payload),
     onSuccess: () => {
@@ -82,6 +106,7 @@ export function OrdersPage() {
     setDueDate("");
     setPaymentMethod("PIX");
   };
+
   const submit = () =>
     createMut.mutate({
       clientId,
@@ -121,8 +146,7 @@ export function OrdersPage() {
           </Button>
         </div>
       </div>
-
-      <div className="rounded-lg border bg-card shadow-sm">
+      <div className="rounded-lg border bg-card shadow-sm overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -131,20 +155,21 @@ export function OrdersPage() {
               <TableHead>Total</TableHead>
               <TableHead>Data</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Pagamento</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={6}>
                     <Skeleton className="h-8" />
                   </TableCell>
                 </TableRow>
               ))
             ) : (data?.data ?? []).length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5}>
+                <TableCell colSpan={6}>
                   <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
                     <Inbox className="h-10 w-10 opacity-30" />
                     <p className="text-sm">
@@ -176,10 +201,48 @@ export function OrdersPage() {
                         value={o.status}
                         options={STATUSES.map((s) => ({
                           value: s,
-                          label: s.replace(/_/g, " "),
+                          label: getStatusLabel(s),
                         }))}
                         onChange={(e) =>
                           statusMut.mutate({ id: o.id, status: e.target.value })
+                        }
+                      />
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={o.paymentStatus} />
+                      {o.paymentStatus === "PENDING" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => {
+                            if (confirm("Confirmar pagamento deste pedido?")) {
+                              paymentMut.mutate({
+                                id: o.id,
+                                paymentStatus: "PAID",
+                              });
+                            }
+                          }}
+                          disabled={paymentMut.isPending}
+                        >
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Dar baixa
+                        </Button>
+                      )}
+                      <Select
+                        className="h-8 w-32 text-xs"
+                        value={o.paymentStatus}
+                        options={PAYMENT_STATUSES.map((s) => ({
+                          value: s,
+                          label: getStatusLabel(s),
+                        }))}
+                        onChange={(e) =>
+                          paymentMut.mutate({
+                            id: o.id,
+                            paymentStatus: e.target.value,
+                          })
                         }
                       />
                     </div>
@@ -190,7 +253,6 @@ export function OrdersPage() {
           </TableBody>
         </Table>
       </div>
-
       <Dialog open={open} onOpenChange={(v) => !v && resetForm()}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -217,7 +279,7 @@ export function OrdersPage() {
                   options={[
                     { value: "PIX", label: "Pix" },
                     { value: "CASH", label: "Dinheiro" },
-                    { value: "CREDIT_CARD", label: "Cartão" },
+                    { value: "CREDIT_CARD", label: "Cartão de Crédito" },
                     { value: "BOLETO", label: "Boleto" },
                   ]}
                   onChange={(e) => setPaymentMethod(e.target.value)}

@@ -34,14 +34,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { formatCpfCnpj } from "@/lib/utils";
 
 const clientSchema = z.object({
   name: z.string().min(2, "Nome obrigatório"),
   document: z
     .string()
     .min(11, "CPF/CNPJ: mínimo 11 dígitos")
-    .max(14, "Máximo 14 dígitos"),
-  email: z.string().email("Email inválido"),
+    .max(18, "Máximo 18 caracteres"),
+  email: z.string().email("Email inválido").optional().or(z.literal("")),
   phone: z.string().optional(),
   mobile: z.string().optional(),
   notes: z.string().optional(),
@@ -64,7 +65,6 @@ export function ClientsPage() {
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-
   const { data, isLoading } = useQuery({
     queryKey: ["clients", search, page],
     queryFn: () =>
@@ -75,16 +75,15 @@ export function ClientsPage() {
         .then((r) => r.data),
     placeholderData: (p) => p,
   });
-
   const {
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<ClientForm>({
     resolver: zodResolver(clientSchema),
   });
-
   const save = useMutation({
     mutationFn: async (payload: ClientForm) => {
       if (editing)
@@ -113,7 +112,6 @@ export function ClientsPage() {
       toast.error(msg);
     },
   });
-
   const del = useMutation({
     mutationFn: (id: string) => api.delete(`/clients/${id}`),
     onSuccess: () => {
@@ -123,7 +121,6 @@ export function ClientsPage() {
     onError: (e: any) =>
       toast.error(e?.response?.data?.error || "Erro ao excluir."),
   });
-
   const close = () => {
     setOpen(false);
     setEditing(null);
@@ -138,18 +135,16 @@ export function ClientsPage() {
     setEditing(row);
     reset({
       name: row.name,
-      document: row.document,
-      email: row.email,
+      document: formatCpfCnpj(row.document),
+      email: row.email || "",
       phone: row.phone || "",
       mobile: row.mobile || "",
       notes: row.notes || "",
     });
     setOpen(true);
   };
-
   const rows = data?.data ?? [];
   const totalPages = data?.totalPages ?? 1;
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -178,7 +173,6 @@ export function ClientsPage() {
           </Button>
         </div>
       </div>
-
       <div className="rounded-lg border bg-card shadow-sm">
         <Table>
           <TableHeader>
@@ -215,12 +209,12 @@ export function ClientsPage() {
                     <div>
                       <p className="font-medium">{row.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {row.document}
+                        {formatCpfCnpj(row.document)}
                       </p>
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {row.email}
+                    {row.email || "—"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {row.phone || row.mobile || "—"}
@@ -285,7 +279,6 @@ export function ClientsPage() {
           </div>
         </div>
       </div>
-
       <Dialog open={open} onOpenChange={(o) => !o && close()}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
@@ -310,8 +303,14 @@ export function ClientsPage() {
               <div className="space-y-2">
                 <Label>CPF/CNPJ *</Label>
                 <Input
-                  {...register("document")}
-                  placeholder="Somente números"
+                  {...register("document", {
+                    onChange: (e) => {
+                      const formatted = formatCpfCnpj(e.target.value);
+                      setValue("document", formatted, { shouldValidate: true });
+                    },
+                  })}
+                  placeholder="000.000.000-00"
+                  maxLength={18}
                 />
                 {errors.document && (
                   <p className="text-xs text-destructive">
@@ -320,11 +319,11 @@ export function ClientsPage() {
                 )}
               </div>
               <div className="space-y-2">
-                <Label>Email *</Label>
+                <Label>Email</Label>
                 <Input
                   type="email"
                   {...register("email")}
-                  placeholder="email@exemplo.com"
+                  placeholder="email@exemplo.com (opcional)"
                 />
                 {errors.email && (
                   <p className="text-xs text-destructive">

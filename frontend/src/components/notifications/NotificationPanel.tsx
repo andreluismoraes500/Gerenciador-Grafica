@@ -1,10 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
-import { X, Bell, CheckCircle, AlertCircle, Info } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { X, Bell, CheckCircle, AlertCircle, Info, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import api from "@/api/client";
+import { toast } from "sonner";
 
 const iconMap: Record<string, any> = {
   SUCCESS: { icon: CheckCircle, color: "text-green-500" },
@@ -20,11 +21,59 @@ export function NotificationPanel({
   open: boolean;
   onClose: () => void;
 }) {
+  const qc = useQueryClient();
+
   const { data: activities, isLoading } = useQuery({
     queryKey: ["notifications"],
     queryFn: () =>
       api.get("/dashboard/recent-activities?limit=15").then((r) => r.data),
     enabled: open,
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/notifications/${id}`),
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ["notifications"] });
+      const previous = qc.getQueryData(["notifications"]);
+
+      qc.setQueryData(["notifications"], (old: any) =>
+        old?.filter((act: any) => act.id !== id),
+      );
+
+      return { previous };
+    },
+    onError: (err, variables, context: any) => {
+      qc.setQueryData(["notifications"], context?.previous);
+      toast.error("Erro ao excluir notificação");
+    },
+    onSuccess: () => {
+      toast.success("Notificação excluída");
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+
+  const deleteAllMut = useMutation({
+    mutationFn: () => api.delete("/notifications"),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: ["notifications"] });
+      const previous = qc.getQueryData(["notifications"]);
+
+      qc.setQueryData(["notifications"], []);
+
+      return { previous };
+    },
+    onError: (err, variables, context: any) => {
+      qc.setQueryData(["notifications"], context?.previous);
+      toast.error("Erro ao limpar notificações");
+    },
+    onSuccess: () => {
+      toast.success("Todas as notificações foram excluídas");
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
   });
 
   if (!open) return null;
@@ -41,16 +90,32 @@ export function NotificationPanel({
             <Bell className="h-5 w-5" />
             <h2 className="font-semibold">Notificações</h2>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="h-8 w-8"
-          >
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {activities && activities.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (confirm("Deseja excluir todas as notificações?")) {
+                    deleteAllMut.mutate();
+                  }
+                }}
+                disabled={deleteAllMut.isPending}
+                className="h-8 text-xs"
+              >
+                Limpar tudo
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="h-8 w-8"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="p-4 space-y-3">
@@ -74,7 +139,7 @@ export function NotificationPanel({
                 return (
                   <div
                     key={act.id}
-                    className="p-4 hover:bg-accent/50 cursor-pointer transition-colors"
+                    className="p-4 hover:bg-accent/50 transition-colors group"
                   >
                     <div className="flex gap-3">
                       <div className={cn("mt-0.5", color)}>
@@ -92,6 +157,15 @@ export function NotificationPanel({
                           {formatDateTime(act.createdAt)}
                         </p>
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => deleteMut.mutate(act.id)}
+                        disabled={deleteMut.isPending}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
                     </div>
                   </div>
                 );

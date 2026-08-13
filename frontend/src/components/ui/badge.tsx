@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { getStatusLabel, getPriorityLabel } from "@/lib/utils";
 
 const variants = {
   default: "bg-primary/10 text-primary border-primary/20",
@@ -54,11 +55,17 @@ const STATUS: Record<
   CONVERTED: { label: "Convertido", variant: "success" },
   PENDING: { label: "Pendente", variant: "warning" },
   PAID: { label: "Pago", variant: "success" },
+  REFUNDED: { label: "Reembolsado", variant: "info" },
   TODO: { label: "A Fazer", variant: "outline" },
+  IN_PROGRESS: { label: "Em Progresso", variant: "info" },
   DONE: { label: "Concluída", variant: "success" },
 };
+
 export function StatusBadge({ status }: { status: string }) {
-  const s = STATUS[status] || { label: status, variant: "outline" as const };
+  const s = STATUS[status] || {
+    label: getStatusLabel(status),
+    variant: "outline" as const,
+  };
   return <Badge variant={s.variant}>{s.label}</Badge>;
 }
 
@@ -68,6 +75,8 @@ const PRIORITY: Record<string, keyof typeof variants> = {
   HIGH: "warning",
   URGENT: "danger",
 };
+
 export function PriorityBadge({ priority }: { priority: string }) {
-  return <Badge variant={PRIORITY[priority] || "outline"}>{priority}</Badge>;
+  const label = getPriorityLabel(priority);
+  return <Badge variant={PRIORITY[priority] || "outline"}>{label}</Badge>;
 }
