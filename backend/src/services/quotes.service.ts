@@ -1,7 +1,6 @@
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { generateQuotePDF } from './pdf.service';
-import { notificationsService } from './notifications.service';
 import nodemailer from 'nodemailer';
 
 async function generateQuoteNumber() {
