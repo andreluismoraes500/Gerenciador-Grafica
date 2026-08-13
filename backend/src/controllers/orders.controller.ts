@@ -5,9 +5,6 @@ import { AuthRequest } from '../middlewares/auth';
 import { createOrderSchema } from '../validators/order.validator';
 import { logActivity } from '../services/activity.service';
 
-const getRouteParamId = (value: string | string[] | undefined) =>
-  Array.isArray(value) ? value[0] : value ?? '';
-
 export const ordersController = {
   async list(req: AuthRequest, res: Response, next: NextFunction) {
     try {
@@ -23,7 +20,7 @@ export const ordersController = {
   },
 
   async getById(req: AuthRequest, res: Response, next: NextFunction) {
-    try { res.json(await ordersService.getById(getRouteParamId(req.params.id))); } catch (e) { next(e); }
+    try { res.json(await ordersService.getById(req.params.id)); } catch (e) { next(e); }
   },
 
   async create(req: AuthRequest, res: Response, next: NextFunction) {
@@ -103,7 +100,7 @@ export const ordersController = {
   async updatePaymentStatus(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { paymentStatus } = req.body;
-      const order = await ordersService.updatePaymentStatus(getRouteParamId(req.params.id), paymentStatus);
+      const order = await ordersService.updatePaymentStatus(req.params.id, paymentStatus);
 
       // 🔔 Notificação: avisa equipe sobre pagamento
       if (paymentStatus === 'PAID') {
@@ -128,14 +125,14 @@ export const ordersController = {
 
   async getInvoice(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const invoice = await ordersService.getInvoice(getRouteParamId(req.params.id));
+      const invoice = await ordersService.getInvoice(req.params.id);
       res.json(invoice);
     } catch (e) { next(e); }
   },
 
   async createInvoice(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const invoice = await ordersService.createInvoice(getRouteParamId(req.params.id));
+      const invoice = await ordersService.createInvoice(req.params.id);
       res.status(201).json(invoice);
     } catch (e) { next(e); }
   },
