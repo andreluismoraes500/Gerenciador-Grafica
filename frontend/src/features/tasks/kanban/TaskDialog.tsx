@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select } from "@/components/ui/select"; // ✅ Apenas Select
 import {
   Dialog,
   DialogContent,
@@ -15,13 +16,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Task } from "./TaskCard";
 
 const taskSchema = z.object({
@@ -57,7 +51,6 @@ export function TaskDialog({
     queryKey: ["projects-select"],
     queryFn: () => api.get("/projects?limit=100").then((r) => r.data.data),
   });
-
   const { data: users } = useQuery({
     queryKey: ["users-select"],
     queryFn: () => api.get("/settings/users").then((r) => r.data),
@@ -68,6 +61,7 @@ export function TaskDialog({
     handleSubmit,
     reset,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<TaskForm>({
     resolver: zodResolver(taskSchema),
@@ -76,6 +70,12 @@ export function TaskDialog({
       priority: "NORMAL",
     },
   });
+
+  // Observa os valores dos selects controlados
+  const statusValue = watch("status");
+  const priorityValue = watch("priority");
+  const projectValue = watch("projectId");
+  const assigneeValue = watch("assigneeId");
 
   useEffect(() => {
     if (open) {
@@ -115,13 +115,26 @@ export function TaskDialog({
     );
   };
 
+  const STATUS_OPTIONS = [
+    { value: "TODO", label: "A Fazer" },
+    { value: "IN_PROGRESS", label: "Em Progresso" },
+    { value: "DONE", label: "Concluída" },
+    { value: "CANCELLED", label: "Cancelada" },
+  ];
+
+  const PRIORITY_OPTIONS = [
+    { value: "LOW", label: "Baixa" },
+    { value: "NORMAL", label: "Normal" },
+    { value: "HIGH", label: "Alta" },
+    { value: "URGENT", label: "Urgente" },
+  ];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{task ? "Editar Tarefa" : "Nova Tarefa"}</DialogTitle>
         </DialogHeader>
-
         <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
           <div className="space-y-2">
             <Label>Título *</Label>
@@ -144,81 +157,62 @@ export function TaskDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+            {/* Status */}
             <div className="space-y-2">
               <Label>Status</Label>
               <Select
-                value={undefined}
-                onValueChange={(v) => setValue("status", v as any)}
-                defaultValue={task?.status || defaultStatus}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="TODO">A Fazer</SelectItem>
-                  <SelectItem value="IN_PROGRESS">Em Progresso</SelectItem>
-                  <SelectItem value="DONE">Concluída</SelectItem>
-                  <SelectItem value="CANCELLED">Cancelada</SelectItem>
-                </SelectContent>
-              </Select>
+                value={statusValue || ""}
+                onChange={(e) => setValue("status", e.target.value as any)}
+                options={STATUS_OPTIONS}
+                placeholder="Selecione..."
+              />
             </div>
 
+            {/* Prioridade */}
             <div className="space-y-2">
               <Label>Prioridade</Label>
               <Select
-                onValueChange={(v) => setValue("priority", v as any)}
-                defaultValue={task?.priority || "NORMAL"}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="LOW">Baixa</SelectItem>
-                  <SelectItem value="NORMAL">Normal</SelectItem>
-                  <SelectItem value="HIGH">Alta</SelectItem>
-                  <SelectItem value="URGENT">Urgente</SelectItem>
-                </SelectContent>
-              </Select>
+                value={priorityValue || "NORMAL"}
+                onChange={(e) => setValue("priority", e.target.value as any)}
+                options={PRIORITY_OPTIONS}
+                placeholder="Selecione..."
+              />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+            {/* Projeto */}
             <div className="space-y-2">
               <Label>Projeto</Label>
               <Select
-                onValueChange={(v) => setValue("projectId", v)}
-                defaultValue={task?.projectId || ""}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Nenhum" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(projects || []).map((p: any) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                value={projectValue || ""}
+                onChange={(e) => setValue("projectId", e.target.value)}
+                options={[
+                  { value: "", label: "— Nenhum —" },
+                  ...(projects || []).map((p: any) => ({
+                    value: p.id,
+                    label: p.title,
+                  })),
+                ]}
+                placeholder="Nenhum"
+              />
             </div>
 
+            {/* Responsável */}
             <div className="space-y-2">
               <Label>Responsável</Label>
               <Select
-                onValueChange={(v) => setValue("assigneeId", v)}
-                defaultValue={task?.assigneeId || ""}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Nenhum" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(users || []).map((u: any) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                value={assigneeValue || ""}
+                onChange={(e) => setValue("assigneeId", e.target.value)}
+                options={[
+                  { value: "", label: "— Nenhum —" },
+                  ...(users || []).map((u: any) => ({
+                    value: u.id,
+                    label: u.name,
+                  })),
+                ]}
+                placeholder="Nenhum"
+              />
             </div>
           </div>
 

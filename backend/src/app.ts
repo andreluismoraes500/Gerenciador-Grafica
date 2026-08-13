@@ -21,6 +21,9 @@ import { errorHandler } from './middlewares/errorHandler';
 import { setupSocket } from './config/socket';
 import { authMiddleware } from './middlewares/auth';
 import { notificationsRoutes } from './routes/notifications.routes';
+import { transactionsRoutes } from './routes/transactions.routes';
+import { stockItemsRoutes } from './routes/stockItems.routes';
+
 
 const app = express();
 const server = createServer(app);
@@ -55,6 +58,8 @@ app.use('/api/tasks',     authMiddleware, tasksRoutes);
 app.use('/api/dashboard', authMiddleware, dashboardRoutes);
 app.use('/api/settings',  authMiddleware, settingsRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/transactions', authMiddleware, transactionsRoutes);
+app.use('/api/stock-items', authMiddleware, stockItemsRoutes);
 
 // 404
 app.use((_, res) => res.status(404).json({ error: 'Route not found' }));
