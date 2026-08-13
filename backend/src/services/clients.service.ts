@@ -46,34 +46,43 @@ export const clientsService = {
   },
 
   async create(data: any, _createdBy: string) {
-    const existing = await prisma.client.findFirst({
+    const existingClient = await prisma.client.findFirst({
       where: { OR: [{ email: data.email }, { document: data.document }] },
     });
-    if (existing) throw new AppError('Client with this email or document already exists', 409);
+    if (existingClient) throw new AppError('Client with this email or document already exists', 409);
 
-    // Todo cliente possui um usuário correspondente com role CLIENT
+    // Um usuário com esse e-mail já pode existir (ex: um ATTENDANT/ADMIN cadastrado à parte).
+    // Nesse caso não faz sentido criar outro User com o mesmo e-mail (a coluna é única).
+    const existingUser = await prisma.user.findUnique({ where: { email: data.email } });
+    if (existingUser) {
+      throw new AppError('Já existe um usuário cadastrado com este e-mail', 409);
+    }
+
+    const { address, ...clientData } = data;
     const tempPassword = randomBytes(8).toString('hex');
     const passwordHash = await bcrypt.hash(tempPassword, 12);
 
-    const user = await prisma.user.create({
-      data: {
-        name: data.name,
-        email: data.email,
-        password: passwordHash,
-        role: 'CLIENT',
-      },
-    });
+    // Cria o User e o Client em uma única transação: se o Client falhar por
+    // qualquer motivo (ex: endereço inválido), o User não fica órfão no banco.
+    const client = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          name: data.name,
+          email: data.email,
+          password: passwordHash,
+          role: 'CLIENT',
+        },
+      });
 
-    const { address, ...clientData } = data;
-
-    const client = await prisma.client.create({
-      data: {
-        ...clientData,
-        userId: user.id,
-        birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
-        address: address ? { create: address } : undefined,
-      },
-      include: { address: true },
+      return tx.client.create({
+        data: {
+          ...clientData,
+          userId: user.id,
+          birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
+          address: address ? { create: address } : undefined,
+        },
+        include: { address: true },
+      });
     });
 
     return client;
@@ -85,30 +94,74 @@ export const clientsService = {
 
     const { address, ...clientData } = data;
 
-    const client = await prisma.client.update({
-      where: { id },
-      data: {
-        ...clientData,
-        birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
-        address: address
-          ? {
-              upsert: {
-                create: address,
-                update: address,
-              },
-            }
-          : undefined,
-      },
-      include: { address: true },
+    // Mantém o User (login do cliente) sincronizado com nome/e-mail do Client,
+    // já que hoje eles ficavam dessincronizados após uma edição.
+    const client = await prisma.$transaction(async (tx) => {
+      if (data.name || data.email) {
+        await tx.user.update({
+          where: { id: existing.userId },
+          data: {
+            ...(data.name ? { name: data.name } : {}),
+            ...(data.email ? { email: data.email } : {}),
+          },
+        });
+      }
+
+      return tx.client.update({
+        where: { id },
+        data: {
+          ...clientData,
+          birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
+          address: address
+            ? {
+                upsert: {
+                  create: address,
+                  update: address,
+                },
+              }
+            : undefined,
+        },
+        include: { address: true },
+      });
     });
 
     return client;
   },
 
   async delete(id: string, _deletedBy: string) {
-    const existing = await prisma.client.findUnique({ where: { id } });
+    const existing = await prisma.client.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { orders: true, projects: true, quotes: true } },
+      },
+    });
     if (!existing) throw new AppError('Client not found', 404);
-    await prisma.client.delete({ where: { id } });
+
+    const { orders, projects, quotes } = existing._count;
+    if (orders > 0 || projects > 0 || quotes > 0) {
+      throw new AppError(
+        'Não é possível excluir este cliente pois existem pedidos, projetos ou orçamentos vinculados a ele. Remova ou transfira esses registros antes de excluir o cliente.',
+        409,
+      );
+    }
+
+    try {
+      // Exclui o Client e o User (login do cliente) juntos. Antes, apenas o
+      // Client era removido e o User ficava para sempre "pré-cadastrado"
+      // na tela de Configurações > Usuários.
+      await prisma.$transaction([
+        prisma.client.delete({ where: { id } }),
+        prisma.user.delete({ where: { id: existing.userId } }),
+      ]);
+    } catch (err: any) {
+      if (err.code === 'P2003') {
+        throw new AppError(
+          'Não foi possível excluir o cliente pois existem outros registros vinculados ao usuário associado.',
+          409,
+        );
+      }
+      throw err;
+    }
   },
 
   async getOrders(clientId: string) {

@@ -51,7 +51,8 @@ export const settingsController = {
 
   async listUsers(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const users = await settingsService.listUsers();
+      const includeInactive = req.query.includeInactive === 'true';
+      const users = await settingsService.listUsers(includeInactive);
       res.json(users);
     } catch (e) { next(e); }
   },
@@ -74,8 +75,11 @@ export const settingsController = {
 
   async deleteUser(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      await settingsService.deleteUser(req.params.id);
-      res.status(204).send();
+      // Antes retornava 204 sem corpo. Agora retornamos o resultado
+      // (excluído de verdade ou apenas desativado) para o frontend poder
+      // exibir a mensagem correta ao usuário.
+      const result = await settingsService.deleteUser(req.params.id);
+      res.status(200).json(result);
     } catch (e) { next(e); }
   },
 
