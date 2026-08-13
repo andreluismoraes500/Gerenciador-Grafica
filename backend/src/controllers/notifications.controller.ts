@@ -3,14 +3,14 @@ import { notificationsService } from '../services/notifications.service';
 import { AuthRequest } from '../middlewares/auth';
 
 const getParamId = (value: string | string[] | undefined): string => {
-  return Array.isArray(value) ? value[0] : value ?? '';
+  return Array.isArray(value) ? value[0] ?? '' : value ?? '';
 };
 
 export const notificationsController = {
   async list(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const limit = parseInt(req.query.limit as string) || 20;
-      const notifications = await (notificationsService as any).list(req.user!.id, limit);
+      const notifications = await notificationsService.list(req.user!.id, limit);
       res.json(notifications);
     } catch (e) { next(e); }
   },

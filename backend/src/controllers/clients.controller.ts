@@ -3,11 +3,10 @@ import { clientsService } from '../services/clients.service';
 import { AuthRequest } from '../middlewares/auth';
 import { createClientSchema, updateClientSchema } from '../validators/client.validator';
 import { logActivity } from '../services/activity.service';
-import { notificationsService } from '@/services/notifications.service';
+import { notificationsService } from '../services/notifications.service';
 
-const getParamId = (req: AuthRequest) => {
-  const id = req.params.id;
-  return Array.isArray(id) ? id[0] : id;
+const getParamId = (value: string | string[] | undefined): string => {
+  return Array.isArray(value) ? value[0] ?? '' : value ?? '';
 };
 
 export const clientsController = {
@@ -26,12 +25,13 @@ export const clientsController = {
 
   async getById(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const client = await clientsService.getById(req.params.id as string);
+      const id = getParamId(req.params.id);
+      const client = await clientsService.getById(id);
       res.json(client);
     } catch (e) { next(e); }
   },
 
-   async create(req: AuthRequest, res: Response, next: NextFunction) {
+  async create(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const data = createClientSchema.parse(req.body);
       const client = await clientsService.create(data, req.user!.id);
@@ -51,8 +51,9 @@ export const clientsController = {
 
   async update(req: AuthRequest, res: Response, next: NextFunction) {
     try {
+      const id = getParamId(req.params.id);
       const data = updateClientSchema.parse(req.body);
-      const client = await clientsService.update(req.params.id as string, data, req.user!.id);
+      const client = await clientsService.update(id, data, req.user!.id);
       await logActivity(req.user!.id, 'UPDATE_CLIENT', 'Client', client.id, { name: client.name });
       res.json(client);
     } catch (e) { next(e); }
@@ -60,15 +61,16 @@ export const clientsController = {
 
   async delete(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      await clientsService.delete(req.params.id as string, req.user!.id);
-      await logActivity(req.user!.id, 'DELETE_CLIENT', 'Client', req.params.id as string);
+      const id = getParamId(req.params.id);
+      await clientsService.delete(id, req.user!.id);
+      await logActivity(req.user!.id, 'DELETE_CLIENT', 'Client', id);
       res.status(204).send();
     } catch (e) { next(e); }
   },
 
   async getOrders(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const id = getParamId(req);
+      const id = getParamId(req.params.id);
       const orders = await clientsService.getOrders(id);
       res.json(orders);
     } catch (e) { next(e); }
@@ -76,7 +78,7 @@ export const clientsController = {
 
   async getProjects(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const id = getParamId(req);
+      const id = getParamId(req.params.id);
       const projects = await clientsService.getProjects(id);
       res.json(projects);
     } catch (e) { next(e); }
@@ -84,7 +86,7 @@ export const clientsController = {
 
   async getQuotes(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const id = getParamId(req);
+      const id = getParamId(req.params.id);
       const quotes = await clientsService.getQuotes(id);
       res.json(quotes);
     } catch (e) { next(e); }

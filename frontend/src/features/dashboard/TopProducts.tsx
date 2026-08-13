@@ -43,7 +43,7 @@ export function TopProducts() {
           >
             <div className="flex-1">
               <p className="font-medium">
-                {item.product?.name || `Produto ${item.productId.slice(0, 8)}`}
+                {item.product?.name || `Produto ${item.productId?.slice(0, 8)}`}
               </p>
               <p className="text-xs text-muted-foreground">
                 {item._sum.quantity} vendidos

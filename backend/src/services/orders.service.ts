@@ -151,15 +151,21 @@ export const ordersService = {
     });
   },
 
-  async updatePaymentStatus(id: string, paymentStatus: string) {
+ async updatePaymentStatus(id: string, paymentStatus: string) {
     const existing = await prisma.order.findUnique({ where: { id } });
     if (!existing) throw new AppError('Pedido não encontrado', 404);
 
     const data: any = { paymentStatus: paymentStatus as any };
 
+    // Preenche paidAt quando marca como PAID
+    if (paymentStatus === 'PAID') {
+      data.paidAt = new Date();
+    }
+
     return prisma.order.update({
       where: { id },
       data,
+      include: { client: true },
     });
   },
 

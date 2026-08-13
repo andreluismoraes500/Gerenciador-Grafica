@@ -46,10 +46,10 @@ export const dashboardService = {
     return results;
   },
 
-  async getTopProducts(limit = 10, days = 30) {
+   async getTopProducts(limit = 10, days = 30) {
     const since = subDays(new Date(), days);
-    
-    return prisma.orderItem.groupBy({
+
+    const grouped = await prisma.orderItem.groupBy({
       by: ['productId'],
       where: {
         order: {
@@ -62,6 +62,22 @@ export const dashboardService = {
       orderBy: { _sum: { totalPrice: 'desc' } },
       take: limit
     });
+
+    // Busca os produtos para incluir nome/sku
+    const productIds = grouped.map(g => g.productId);
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, name: true, sku: true },
+    });
+
+    const productMap = new Map(products.map(p => [p.id, p]));
+
+    return grouped.map(g => ({
+      productId: g.productId,
+      product: productMap.get(g.productId) || null,
+      _sum: g._sum,
+      _count: g._count,
+    }));
   },
 
   async getStatusDistribution() {

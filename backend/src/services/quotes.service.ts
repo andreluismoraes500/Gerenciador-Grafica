@@ -146,17 +146,10 @@ export const quotesService = {
           })),
         },
       },
-      include: { items: true },
+      include: { items: true, client: true },
     });
 
     await prisma.quote.update({ where: { id }, data: { status: 'CONVERTED', orderId: order.id } });
-
-    await notificationsService.notifyTeam('', {
-      title: 'Orçamento enviado ao cliente',
-      message: `Orçamento #${quote.number} enviado para ${quote.client.email}.`,
-      type: 'INFO',
-      metadata: { entity: 'Quote', entityId: quote.id, route: '/quotes' },
-    });
 
     return order;
   },
