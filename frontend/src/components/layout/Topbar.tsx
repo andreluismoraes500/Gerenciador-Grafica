@@ -14,14 +14,15 @@ export function Topbar({
   const logout = useAuthStore((s) => s.logout);
   const { theme, toggle } = useThemeStore();
 
-  const { data: notifData } = useQuery({
-    queryKey: ["notifications-count"],
-    queryFn: () =>
-      api.get("/dashboard/recent-activities?limit=1").then((r) => r.data),
-    refetchInterval: 30000,
+  // 🔔 Agora busca das notificações REAIS, não do ActivityLog
+  const { data: notifications } = useQuery({
+    queryKey: ["notifications"],
+    queryFn: () => api.get("/notifications?limit=100").then((r) => r.data),
+    refetchInterval: 15000, // Atualiza a cada 15s
   });
 
-  const unreadCount = notifData?.length || 0;
+  // Conta apenas as não lidas
+  const unreadCount = notifications?.filter((n: any) => !n.isRead).length || 0;
 
   return (
     <header className="h-16 border-b border-border bg-card flex items-center justify-between px-6 sticky top-0 z-30">
@@ -46,7 +47,6 @@ export function Topbar({
           </span>
         </div>
       </div>
-
       <div className="flex items-center gap-1">
         <Button
           variant="ghost"
@@ -60,7 +60,6 @@ export function Topbar({
             <Moon className="h-4 w-4" />
           )}
         </Button>
-
         <Button
           variant="ghost"
           size="icon"
@@ -69,10 +68,11 @@ export function Topbar({
         >
           <Bell className="h-4 w-4" />
           {unreadCount > 0 && (
-            <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-destructive animate-pulse" />
+            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center px-1 border-2 border-card">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
           )}
         </Button>
-
         <Button
           variant="ghost"
           size="icon"

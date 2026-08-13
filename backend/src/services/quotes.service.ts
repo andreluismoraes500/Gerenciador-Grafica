@@ -1,6 +1,7 @@
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { generateQuotePDF } from './pdf.service';
+import { notificationsService } from './notifications.service';
 import nodemailer from 'nodemailer';
 
 async function generateQuoteNumber() {
@@ -117,7 +118,10 @@ export const quotesService = {
   },
 
   async convertToOrder(id: string, creatorId: string, paymentMethod: string) {
-    const quote = await prisma.quote.findUnique({ where: { id }, include: { items: true } });
+    const quote = await prisma.quote.findUnique({
+      where: { id },
+      include: { client: true, items: true },
+    });
     if (!quote) throw new AppError('Quote not found', 404);
     if (quote.status === 'CONVERTED') throw new AppError('Quote already converted', 400);
 
@@ -146,6 +150,13 @@ export const quotesService = {
     });
 
     await prisma.quote.update({ where: { id }, data: { status: 'CONVERTED', orderId: order.id } });
+
+    await notificationsService.notifyTeam('', {
+      title: 'Orçamento enviado ao cliente',
+      message: `Orçamento #${quote.number} enviado para ${quote.client.email}.`,
+      type: 'INFO',
+      metadata: { entity: 'Quote', entityId: quote.id, route: '/quotes' },
+    });
 
     return order;
   },

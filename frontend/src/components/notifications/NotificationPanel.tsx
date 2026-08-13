@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { X, Bell, CheckCircle, AlertCircle, Info, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,6 +23,7 @@ export function NotificationPanel({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: notifications, isLoading } = useQuery({
     queryKey: ["notifications"],
@@ -74,6 +76,13 @@ export function NotificationPanel({
       qc.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
+
+  const handleNotifClick = (notif: any) => {
+    if (notif.metadata?.route) {
+      navigate(notif.metadata.route);
+      onClose();
+    }
+  };
 
   if (!open) return null;
 
@@ -135,18 +144,36 @@ export function NotificationPanel({
                 const Icon = iconMap[notif.type]?.icon || Info;
                 const color =
                   iconMap[notif.type]?.color || "text-muted-foreground";
+                const isClickable = !!notif.metadata?.route;
                 return (
                   <div
                     key={notif.id}
-                    className="p-4 hover:bg-accent/50 transition-colors group"
+                    className={cn(
+                      "p-4 hover:bg-accent/50 transition-colors group",
+                      !notif.isRead && "bg-primary/5",
+                      isClickable && "cursor-pointer",
+                    )}
+                    onClick={() => isClickable && handleNotifClick(notif)}
                   >
                     <div className="flex gap-3">
                       <div className={cn("mt-0.5", color)}>
                         <Icon className="h-5 w-5" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium">{notif.title}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
+                        <div className="flex items-center gap-2">
+                          <p
+                            className={cn(
+                              "text-sm",
+                              !notif.isRead ? "font-semibold" : "font-medium",
+                            )}
+                          >
+                            {notif.title}
+                          </p>
+                          {!notif.isRead && (
+                            <span className="h-2 w-2 rounded-full bg-primary flex-shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                           {notif.message}
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
@@ -156,8 +183,11 @@ export function NotificationPanel({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => deleteMut.mutate(notif.id)}
+                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteMut.mutate(notif.id);
+                        }}
                         disabled={deleteMut.isPending}
                       >
                         <Trash2 className="h-3 w-3" />

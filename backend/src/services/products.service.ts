@@ -1,5 +1,6 @@
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
+import { notificationsService } from './notifications.service';
 
 interface ListParams {
   page: number;
@@ -106,6 +107,20 @@ export const productsService = {
   async getLowStock() {
     const products = await prisma.product.findMany({ where: { isActive: true } });
     return products.filter(p => p.stock <= p.minStock);
+  },
+
+   async checkAndNotifyLowStock(productId: string) {
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+    if (!product) return;
+
+    if (product.stock <= product.minStock) {
+      await notificationsService.notifyTeam('', {
+        title: '⚠️ Estoque baixo',
+        message: `Produto "${product.name}" (${product.sku}) tem apenas ${product.stock} unidades em estoque (mínimo: ${product.minStock}).`,
+        type: 'WARNING',
+        metadata: { entity: 'Product', entityId: product.id, route: '/products' },
+      });
+    }
   },
 
   async updateStock(id: string, quantity: number) {

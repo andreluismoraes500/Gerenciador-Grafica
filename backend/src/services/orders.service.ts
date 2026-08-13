@@ -1,5 +1,6 @@
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
+import { productsService } from './products.service';
 import { startOfMonth, subMonths } from 'date-fns';
 
 interface ListParams {
@@ -66,6 +67,8 @@ export const ordersService = {
     });
     if (products.length !== data.items.length) throw new AppError('One or more products not found', 400);
 
+    
+
     const itemsWithTotal = data.items.map((item: any) => ({
       ...item,
       totalPrice: item.quantity * item.unitPrice - (item.discount || 0),
@@ -103,6 +106,10 @@ export const ordersService = {
         }),
       ),
     );
+
+    for (const item of data.items) {
+      await productsService.checkAndNotifyLowStock(item.productId);
+    }
 
     return order;
   },
@@ -168,6 +175,8 @@ export const ordersService = {
 
     const count = await prisma.invoice.count();
     const number = `NF-${String(count + 1).padStart(6, '0')}`;
+
+    
 
     return prisma.invoice.create({
       data: { number, orderId, total: order.total, dueDate: order.dueDate },
