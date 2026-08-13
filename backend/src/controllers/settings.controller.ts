@@ -2,6 +2,11 @@ import { Response, NextFunction } from 'express';
 import { settingsService } from '../services/settings.service';
 import { AuthRequest } from '../middlewares/auth';
 
+const getRouteParamId = (value: string | string[] | undefined): string => {
+  if (Array.isArray(value)) return value[0] ?? '';
+  return value ?? '';
+};
+
 export const settingsController = {
   async getCompanySettings(req: AuthRequest, res: Response, next: NextFunction) {
     try {
@@ -49,13 +54,18 @@ export const settingsController = {
     } catch (e) { next(e); }
   },
 
+// ... código existente
+
   async listUsers(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const includeInactive = req.query.includeInactive === 'true';
-      const users = await settingsService.listUsers(includeInactive);
+      const includeClients = req.query.includeClients === 'true';
+      const users = await settingsService.listUsers(includeInactive, includeClients);
       res.json(users);
     } catch (e) { next(e); }
   },
+
+// ... resto do código
 
   async createUser(req: AuthRequest, res: Response, next: NextFunction) {
     try {
@@ -68,7 +78,8 @@ export const settingsController = {
   async updateUser(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const data = req.body;
-      const user = await settingsService.updateUser(req.params.id, data);
+      const userId = getRouteParamId(req.params.id);
+      const user = await settingsService.updateUser(userId, data);
       res.json(user);
     } catch (e) { next(e); }
   },
@@ -78,7 +89,8 @@ export const settingsController = {
       // Antes retornava 204 sem corpo. Agora retornamos o resultado
       // (excluído de verdade ou apenas desativado) para o frontend poder
       // exibir a mensagem correta ao usuário.
-      const result = await settingsService.deleteUser(req.params.id);
+      const userId = getRouteParamId(req.params.id);
+      const result = await settingsService.deleteUser(userId);
       res.status(200).json(result);
     } catch (e) { next(e); }
   },

@@ -146,11 +146,13 @@ export const ordersService = {
 
   async updatePaymentStatus(id: string, paymentStatus: string) {
     const existing = await prisma.order.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Order not found', 404);
+    if (!existing) throw new AppError('Pedido não encontrado', 404);
+
+    const data: any = { paymentStatus: paymentStatus as any };
 
     return prisma.order.update({
       where: { id },
-      data: { paymentStatus: paymentStatus as any },
+      data,
     });
   },
 

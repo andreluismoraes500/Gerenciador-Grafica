@@ -21,7 +21,8 @@ export const dashboardController = {
   async getTopProducts(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const limit = parseInt(req.query.limit as string) || 10;
-      const products = await dashboardService.getTopProducts(limit);
+      const days = parseInt(req.query.days as string) || 30;
+      const products = await dashboardService.getTopProducts(limit, days);
       res.json(products);
     } catch (e) { next(e); }
   },

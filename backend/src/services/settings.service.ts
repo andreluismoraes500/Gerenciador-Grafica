@@ -84,9 +84,20 @@ export const settingsService = {
   // Por padrão não retorna usuários inativos (desativados), para que a lista
   // não fique "poluída" com usuários que já foram excluídos logicamente.
   // Passe includeInactive=true para ver todos (ex: um filtro na tela).
-  async listUsers(includeInactive = false) {
+   async listUsers(includeInactive = false, includeClients = false) {
+    const where: any = {};
+    
+    if (!includeInactive) {
+      where.isActive = true;
+    }
+    
+    if (!includeClients) {
+      where.role = { not: 'CLIENT' };
+      where.client = null;
+    }
+    
     return prisma.user.findMany({
-      where: includeInactive ? {} : { isActive: true },
+      where,
       select: {
         id: true,
         name: true,
@@ -196,4 +207,6 @@ export const settingsService = {
       data: { users, clients, products, orders, projects, quotes },
     };
   },
+
+  
 };

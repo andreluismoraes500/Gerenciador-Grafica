@@ -349,6 +349,7 @@ model Order {
     createdAt       DateTime      @default(now())
     updatedAt       DateTime      @updatedAt
     deliveredAt     DateTime?
+    paidAt          DateTime?
 
     invoices Invoice[]
     quotes   Quote[]

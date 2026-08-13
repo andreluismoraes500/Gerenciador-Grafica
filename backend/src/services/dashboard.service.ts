@@ -1,5 +1,5 @@
 import { prisma } from '../config/database';
-import { startOfMonth, subMonths } from 'date-fns';
+import { startOfMonth, subDays, subMonths } from 'date-fns';
 
 export const dashboardService = {
   async getMetrics() {
@@ -46,12 +46,20 @@ export const dashboardService = {
     return results;
   },
 
-  async getTopProducts(limit = 10) {
+  async getTopProducts(limit = 10, days = 30) {
+    const since = subDays(new Date(), days);
+    
     return prisma.orderItem.groupBy({
       by: ['productId'],
+      where: {
+        order: {
+          createdAt: { gte: since },
+          paymentStatus: 'PAID'
+        }
+      },
       _sum: { quantity: true, totalPrice: true },
       _count: true,
-      orderBy: { _sum: { quantity: 'desc' } },
+      orderBy: { _sum: { totalPrice: 'desc' } },
       take: limit
     });
   },
@@ -83,3 +91,4 @@ export const dashboardService = {
     return products.filter(p => p.stock <= p.minStock);
   }
 };
+

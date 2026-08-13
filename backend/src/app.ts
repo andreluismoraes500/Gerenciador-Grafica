@@ -20,6 +20,7 @@ import { uploadRoutes } from './routes/upload.routes';
 import { errorHandler } from './middlewares/errorHandler';
 import { setupSocket } from './config/socket';
 import { authMiddleware } from './middlewares/auth';
+import { notificationsRoutes } from './routes/notifications.routes';
 
 const app = express();
 const server = createServer(app);
@@ -53,6 +54,7 @@ app.use('/api/suppliers', authMiddleware, suppliersRoutes);
 app.use('/api/tasks',     authMiddleware, tasksRoutes);
 app.use('/api/dashboard', authMiddleware, dashboardRoutes);
 app.use('/api/settings',  authMiddleware, settingsRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // 404
 app.use((_, res) => res.status(404).json({ error: 'Route not found' }));

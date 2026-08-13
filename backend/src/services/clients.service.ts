@@ -46,37 +46,41 @@ export const clientsService = {
   },
 
   async create(data: any, _createdBy: string) {
+    // Normalizar documento removendo pontuação
+    const cleanDocument = data.document.replace(/[^\d]/g, '');
+    
     const existingClient = await prisma.client.findFirst({
-      where: { OR: [{ email: data.email }, { document: data.document }] },
+      where: { OR: [{ email: data.email || null }, { document: cleanDocument }] },
     });
-    if (existingClient) throw new AppError('Client with this email or document already exists', 409);
-
-    // Um usuário com esse e-mail já pode existir (ex: um ATTENDANT/ADMIN cadastrado à parte).
-    // Nesse caso não faz sentido criar outro User com o mesmo e-mail (a coluna é única).
-    const existingUser = await prisma.user.findUnique({ where: { email: data.email } });
+    
+    if (existingClient) throw new AppError('Cliente com este email ou documento já existe', 409);
+    
+    const existingUser = data.email ? await prisma.user.findUnique({ where: { email: data.email } }) : null;
     if (existingUser) {
       throw new AppError('Já existe um usuário cadastrado com este e-mail', 409);
     }
-
+    
     const { address, ...clientData } = data;
     const tempPassword = randomBytes(8).toString('hex');
     const passwordHash = await bcrypt.hash(tempPassword, 12);
-
-    // Cria o User e o Client em uma única transação: se o Client falhar por
-    // qualquer motivo (ex: endereço inválido), o User não fica órfão no banco.
+    
     const client = await prisma.$transaction(async (tx) => {
+      // Se não tem email, gerar um fictício baseado no documento
+      const email = data.email || `${cleanDocument}@sem-email.local`;
+      
       const user = await tx.user.create({
         data: {
           name: data.name,
-          email: data.email,
+          email,
           password: passwordHash,
           role: 'CLIENT',
         },
       });
-
+      
       return tx.client.create({
         data: {
           ...clientData,
+          document: cleanDocument,
           userId: user.id,
           birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
           address: address ? { create: address } : undefined,
@@ -84,7 +88,7 @@ export const clientsService = {
         include: { address: true },
       });
     });
-
+    
     return client;
   },
 
@@ -93,6 +97,11 @@ export const clientsService = {
     if (!existing) throw new AppError('Client not found', 404);
 
     const { address, ...clientData } = data;
+
+    // Normalizar documento se fornecido
+    if (data.document) {
+      clientData.document = data.document.replace(/[^\d]/g, '');
+    }
 
     // Mantém o User (login do cliente) sincronizado com nome/e-mail do Client,
     // já que hoje eles ficavam dessincronizados após uma edição.
