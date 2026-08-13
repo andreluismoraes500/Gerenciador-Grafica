@@ -23,10 +23,9 @@ export function NotificationPanel({
 }) {
   const qc = useQueryClient();
 
-  const { data: activities, isLoading } = useQuery({
+  const { data: notifications, isLoading } = useQuery({
     queryKey: ["notifications"],
-    queryFn: () =>
-      api.get("/dashboard/recent-activities?limit=15").then((r) => r.data),
+    queryFn: () => api.get("/notifications?limit=20").then((r) => r.data),
     enabled: open,
   });
 
@@ -37,7 +36,7 @@ export function NotificationPanel({
       const previous = qc.getQueryData(["notifications"]);
 
       qc.setQueryData(["notifications"], (old: any) =>
-        old?.filter((act: any) => act.id !== id),
+        old?.filter((n: any) => n.id !== id),
       );
 
       return { previous };
@@ -91,7 +90,7 @@ export function NotificationPanel({
             <h2 className="font-semibold">Notificações</h2>
           </div>
           <div className="flex items-center gap-1">
-            {activities && activities.length > 0 && (
+            {notifications && notifications.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -123,7 +122,7 @@ export function NotificationPanel({
                 <Skeleton key={i} className="h-16" />
               ))}
             </div>
-          ) : !activities || activities.length === 0 ? (
+          ) : !notifications || notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center p-6">
               <Bell className="h-12 w-12 text-muted-foreground/30 mb-3" />
               <p className="text-sm text-muted-foreground">
@@ -132,13 +131,13 @@ export function NotificationPanel({
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {activities.map((act: any) => {
-                const Icon = iconMap[act.type]?.icon || Info;
+              {notifications.map((notif: any) => {
+                const Icon = iconMap[notif.type]?.icon || Info;
                 const color =
-                  iconMap[act.type]?.color || "text-muted-foreground";
+                  iconMap[notif.type]?.color || "text-muted-foreground";
                 return (
                   <div
-                    key={act.id}
+                    key={notif.id}
                     className="p-4 hover:bg-accent/50 transition-colors group"
                   >
                     <div className="flex gap-3">
@@ -146,22 +145,19 @@ export function NotificationPanel({
                         <Icon className="h-5 w-5" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {act.action.replace(/_/g, " ")}
-                        </p>
+                        <p className="text-sm font-medium">{notif.title}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {act.entity}{" "}
-                          {act.entityId && `#${act.entityId.slice(0, 6)}`}
+                          {notif.message}
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {formatDateTime(act.createdAt)}
+                          {formatDateTime(notif.createdAt)}
                         </p>
                       </div>
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => deleteMut.mutate(act.id)}
+                        onClick={() => deleteMut.mutate(notif.id)}
                         disabled={deleteMut.isPending}
                       >
                         <Trash2 className="h-3 w-3" />
