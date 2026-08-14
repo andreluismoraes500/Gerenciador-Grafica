@@ -1,5 +1,6 @@
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
+import { notificationsService } from './notifications.service';
 
 interface ListParams {
   page: number;
@@ -20,7 +21,6 @@ export const projectsService = {
     if (clientId) where.clientId = clientId;
     if (designerId) where.designerId = designerId;
 
-    // Designers só veem os próprios projetos por padrão; clientes só veem os seus
     if (role === 'DESIGNER' && !designerId) where.designerId = userId;
     if (role === 'CLIENT') {
       const client = await prisma.client.findUnique({ where: { userId } });
@@ -30,7 +30,7 @@ export const projectsService = {
     const [data, total] = await Promise.all([
       prisma.project.findMany({
         where,
-        include: { client: true, designer: true, files: true },
+        include: { client: true, designer: true, files: true, order: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -51,6 +51,11 @@ export const projectsService = {
         comments: { orderBy: { createdAt: 'asc' }, include: { user: true } },
         approvals: true,
         tasks: true,
+        order: {
+          include: {
+            items: { include: { product: true } }
+          }
+        },
       },
     });
     if (!project) throw new AppError('Project not found', 404);
@@ -87,11 +92,38 @@ export const projectsService = {
     await prisma.project.delete({ where: { id } });
   },
 
-  async updateStatus(id: string, status: string, _updatedBy: string) {
+  async updateStatus(id: string, status: string, updatedBy: string) {
     if (!VALID_STATUSES.includes(status)) throw new AppError('Invalid status', 400);
 
-    const existing = await prisma.project.findUnique({ where: { id } });
+    const existing = await prisma.project.findUnique({ 
+      where: { id },
+      include: { files: true, order: { include: { items: { include: { product: true } } } } }
+    });
     if (!existing) throw new AppError('Project not found', 404);
+
+    // Verifica se o projeto tem arte final antes de ir para produção
+    if (status === 'PRODUCTION' || status === 'COMPLETED') {
+      const hasFinalArt = existing.files.some(f => f.isFinal);
+      if (!hasFinalArt) {
+        throw new AppError(
+          'O projeto precisa ter uma arte final marcada antes de ser enviado para produção.',
+          400
+        );
+      }
+    }
+
+    // Se for concluído, chama completeProject
+    if (status === 'COMPLETED') {
+      return this.completeProject(id, updatedBy);
+    }
+
+    // Se for para produção, atualiza o pedido vinculado
+    if (status === 'PRODUCTION' && existing.orderId) {
+      await prisma.order.update({
+        where: { id: existing.orderId },
+        data: { status: 'IN_PRODUCTION' }
+      });
+    }
 
     return prisma.project.update({
       where: { id },
@@ -99,6 +131,131 @@ export const projectsService = {
         status: status as any,
         completedAt: status === 'COMPLETED' ? new Date() : existing.completedAt,
       },
+    });
+  },
+
+  /**
+   * Complete project - marks as COMPLETED, updates order status,
+   * deducts stock, creates notifications
+   */
+  async completeProject(projectId: string, completedBy: string) {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: {
+        client: true,
+        designer: true,
+        order: {
+          include: {
+            items: {
+              include: {
+                product: true
+              }
+            }
+          }
+        },
+        files: true,
+      },
+    });
+
+    if (!project) throw new AppError('Project not found', 404);
+    if (project.status === 'COMPLETED') throw new AppError('Project already completed', 400);
+
+    // Verifica arte final
+    const hasFinalArt = project.files.some(f => f.isFinal);
+    if (!hasFinalArt) {
+      throw new AppError(
+        'O projeto precisa ter uma arte final marcada antes de ser concluído.',
+        400
+      );
+    }
+
+    // Executa todas as operações em uma transação
+    return await prisma.$transaction(async (tx) => {
+      // 1. Atualiza o status do projeto
+      const updatedProject = await tx.project.update({
+        where: { id: projectId },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+        },
+      });
+
+      // 2. Se houver pedido vinculado, atualiza seu status e etapa de produção
+      if (project.orderId) {
+        await tx.order.update({
+          where: { id: project.orderId },
+          data: {
+            status: 'READY',
+            productionStep: 'SHIPPING',
+          },
+        });
+
+        // 3. DEDUZ ESTOQUE DOS INSUMOS (StockItems)
+        // Baseado nos produtos do pedido
+        const orderItems = project.order?.items || [];
+        for (const item of orderItems) {
+          // Busca insumos relacionados ao produto (através de uma relação de composição)
+          // Por simplicidade, vamos buscar um insumo genérico baseado na categoria
+          const stockItems = await tx.stockItem.findMany({
+            where: {
+              category: item.product.categoryId ? { equals: item.product.categoryId } : undefined,
+              isActive: true,
+            },
+          });
+
+          if (stockItems.length > 0) {
+            // Para demonstração, deduzimos uma quantidade proporcional do primeiro insumo
+            // Em produção, você teria uma tabela de BOM (Bill of Materials)
+            const amountToDeduct = item.quantity * 1; // 1 unidade por item
+            const stockItem = stockItems[0];
+            
+            if (stockItem.quantity >= amountToDeduct) {
+              await tx.stockItem.update({
+                where: { id: stockItem.id },
+                data: {
+                  quantity: { decrement: amountToDeduct },
+                },
+              });
+
+              // Notifica se o estoque ficou baixo
+              if (stockItem.quantity - amountToDeduct <= stockItem.minStock) {
+                await notificationsService.notifyTeam(completedBy, {
+                  title: '⚠️ Estoque baixo de insumo',
+                  message: `O insumo "${stockItem.name}" está com estoque baixo (${stockItem.quantity - amountToDeduct} ${stockItem.unit}).`,
+                  type: 'WARNING',
+                  metadata: { entity: 'StockItem', entityId: stockItem.id, route: '/stock' },
+                });
+              }
+            } else {
+              throw new AppError(
+                `Estoque insuficiente para o insumo "${stockItem.name}". Disponível: ${stockItem.quantity}, Necessário: ${amountToDeduct}`,
+                400
+              );
+            }
+          }
+        }
+      }
+
+      // 4. Cria notificações
+      // Notifica o designer que o projeto foi concluído
+      if (project.designerId) {
+        await notificationsService.create(project.designerId, {
+          title: '✅ Projeto concluído',
+          message: `O projeto "${project.title}" foi concluído e está pronto para entrega.`,
+          type: 'SUCCESS',
+          metadata: { entity: 'Project', entityId: projectId, route: '/projects' },
+        });
+      }
+
+      // Notifica a equipe
+      await notificationsService.notifyTeam(completedBy, {
+        title: '📦 Projeto finalizado',
+        message: `"${project.title}" foi concluído${project.client ? ` para ${project.client.name}` : ''}.`,
+        type: 'SUCCESS',
+        metadata: { entity: 'Project', entityId: projectId, route: '/projects' },
+      });
+
+      return updatedProject;
     });
   },
 
@@ -131,6 +288,24 @@ export const projectsService = {
     await prisma.projectFile.delete({ where: { id: fileId } });
   },
 
+  async updateFile(projectId: string, fileId: string, data: { isFinal?: boolean }, _updatedBy: string) {
+    const file = await prisma.projectFile.findFirst({ where: { id: fileId, projectId } });
+    if (!file) throw new AppError('File not found', 404);
+
+    // Se está marcando como final, desmarca os outros
+    if (data.isFinal) {
+      await prisma.projectFile.updateMany({
+        where: { projectId, isFinal: true },
+        data: { isFinal: false },
+      });
+    }
+
+    return prisma.projectFile.update({
+      where: { id: fileId },
+      data: { isFinal: data.isFinal },
+    });
+  },
+
   async addComment(
     projectId: string,
     data: { content: string; isInternal?: boolean; parentId?: string; userId: string },
@@ -154,11 +329,21 @@ export const projectsService = {
     projectId: string,
     data: { approvedBy: string; approvedEmail: string; signature?: string; notes?: string },
   ) {
-    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: { files: true, order: { include: { items: true } } }
+    });
     if (!project) throw new AppError('Project not found', 404);
+
+    // Verifica se há arte final
+    const hasFinalArt = project.files.some(f => f.isFinal);
+    if (!hasFinalArt) {
+      throw new AppError('O projeto precisa ter uma arte final marcada para ser aprovado.', 400);
+    }
 
     const approval = await prisma.approval.create({ data: { projectId, ...data } });
 
+    // Atualiza para PRODUCTION e notifica
     await prisma.project.update({
       where: { id: projectId },
       data: { status: 'PRODUCTION' },

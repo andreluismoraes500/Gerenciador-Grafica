@@ -44,6 +44,7 @@ const Content = React.forwardRef<
 Content.displayName = "DialogContent";
 
 export const DialogContent = Content;
+
 export const DialogHeader = ({
   className,
   ...p
@@ -53,6 +54,7 @@ export const DialogHeader = ({
     {...p}
   />
 );
+
 export const DialogFooter = ({
   className,
   ...p
@@ -65,6 +67,7 @@ export const DialogFooter = ({
     {...p}
   />
 );
+
 export const DialogTitle = ({
   className,
   ...p
@@ -74,4 +77,5 @@ export const DialogTitle = ({
     {...p}
   />
 );
+
 export const DialogDescription = DialogPrimitive.Description;

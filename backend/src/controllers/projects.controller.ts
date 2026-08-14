@@ -20,7 +20,7 @@ export const projectsController = {
         clientId: clientId as string,
         designerId: designerId as string,
         userId: req.user!.id,
-        role: req.user!.role
+        role: req.user!.role,
       });
       res.json(result);
     } catch (e) { next(e); }
@@ -40,7 +40,6 @@ export const projectsController = {
       const project = await projectsService.create(data, req.user!.id);
       await logActivity(req.user!.id, 'CREATE_PROJECT', 'Project', project.id, { title: project.title });
 
-      // 🔔 Notificação: avisa o designer atribuído (se houver e não for o criador)
       if (project.designerId && project.designerId !== req.user!.id) {
         await notificationsService.create(project.designerId, {
           title: 'Novo projeto atribuído a você',
@@ -50,7 +49,6 @@ export const projectsController = {
         });
       }
 
-      // 🔔 Notificação: avisa o restante da equipe
       await notificationsService.notifyTeam(req.user!.id, {
         title: 'Novo projeto criado',
         message: `"${project.title}" — ${project.client?.name || ''}`,
@@ -88,7 +86,20 @@ export const projectsController = {
       const id = getParamId(req.params.id);
       const project = await projectsService.updateStatus(id, status, req.user!.id);
       await logActivity(req.user!.id, 'UPDATE_PROJECT_STATUS', 'Project', project.id, { status });
+      
+      // Socket para todos
       req.app.get('io')?.emit('project:status-changed', project);
+      res.json(project);
+    } catch (e) { next(e); }
+  },
+
+  async completeProject(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const id = getParamId(req.params.id);
+      const project = await projectsService.completeProject(id, req.user!.id);
+      await logActivity(req.user!.id, 'COMPLETE_PROJECT', 'Project', project.id, { title: project.title });
+      
+      req.app.get('io')?.emit('project:completed', project);
       res.json(project);
     } catch (e) { next(e); }
   },
@@ -98,7 +109,18 @@ export const projectsController = {
       const files = req.files as Express.Multer.File[];
       const id = getParamId(req.params.id);
       const result = await projectsService.uploadFiles(id, files, req.user!.id);
+      await logActivity(req.user!.id, 'UPLOAD_FILES', 'Project', id, { count: files.length });
       res.json(result);
+    } catch (e) { next(e); }
+  },
+
+  async updateFile(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const id = getParamId(req.params.id);
+      const fileId = getParamId(req.params.fileId);
+      const { isFinal } = req.body;
+      const file = await projectsService.updateFile(id, fileId, { isFinal }, req.user!.id);
+      res.json(file);
     } catch (e) { next(e); }
   },
 
@@ -119,7 +141,7 @@ export const projectsController = {
         content,
         isInternal,
         parentId,
-        userId: req.user!.id
+        userId: req.user!.id,
       });
       req.app.get('io')?.to(`project:${id}`).emit('project:comment-added', comment);
       res.status(201).json(comment);
@@ -143,14 +165,13 @@ export const projectsController = {
         approvedBy,
         approvedEmail,
         signature,
-        notes
+        notes,
       });
 
       await logActivity(req.user!.id, 'APPROVE_PROJECT', 'Project', id, { approvedBy });
 
-      // 🔔 Notificação: avisa equipe que o projeto foi aprovado
       await notificationsService.notifyTeam(req.user!.id, {
-        title: 'Projeto aprovado pelo cliente',
+        title: '✅ Projeto aprovado pelo cliente',
         message: `O projeto foi aprovado por ${approvedBy}. Produção pode ser iniciada.`,
         type: 'SUCCESS',
         metadata: { entity: 'Project', entityId: id, route: '/projects' },
@@ -159,5 +180,5 @@ export const projectsController = {
       req.app.get('io')?.emit('project:approved', { projectId: id, approval });
       res.status(201).json(approval);
     } catch (e) { next(e); }
-  }
+  },
 };

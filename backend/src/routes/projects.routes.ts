@@ -11,7 +11,9 @@ projectsRoutes.post('/', requireRole('ADMIN', 'ATTENDANT', 'DESIGNER'), projects
 projectsRoutes.put('/:id', requireRole('ADMIN', 'ATTENDANT', 'DESIGNER'), projectsController.update);
 projectsRoutes.delete('/:id', requireRole('ADMIN', 'DESIGNER'), projectsController.delete);
 projectsRoutes.patch('/:id/status', requireRole('ADMIN', 'ATTENDANT', 'DESIGNER'), projectsController.updateStatus);
+projectsRoutes.post('/:id/complete', requireRole('ADMIN', 'ATTENDANT', 'DESIGNER'), projectsController.completeProject);
 projectsRoutes.post('/:id/files', requireRole('ADMIN', 'DESIGNER'), upload.array('files', 10), projectsController.uploadFiles);
+projectsRoutes.patch('/:id/files/:fileId', requireRole('ADMIN', 'DESIGNER'), projectsController.updateFile);
 projectsRoutes.delete('/:id/files/:fileId', requireRole('ADMIN', 'DESIGNER'), projectsController.deleteFile);
 projectsRoutes.post('/:id/comments', projectsController.addComment);
 projectsRoutes.delete('/:id/comments/:commentId', projectsController.deleteComment);

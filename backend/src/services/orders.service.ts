@@ -1,6 +1,7 @@
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { productsService } from './products.service';
+import { notificationsService } from './notifications.service';
 import { startOfMonth, subMonths } from 'date-fns';
 
 interface ListParams {
@@ -52,7 +53,13 @@ export const ordersService = {
   async getById(id: string) {
     const order = await prisma.order.findUnique({
       where: { id },
-      include: { client: true, items: { include: { product: true } }, invoices: true, project: true },
+      include: { 
+        client: true, 
+        items: { include: { product: true } }, 
+        invoices: true, 
+        project: true,
+        transactions: true,
+      },
     });
     if (!order) throw new AppError('Order not found', 404);
     return order;
@@ -66,8 +73,6 @@ export const ordersService = {
       where: { id: { in: data.items.map((i: any) => i.productId) } },
     });
     if (products.length !== data.items.length) throw new AppError('One or more products not found', 400);
-
-    
 
     const itemsWithTotal = data.items.map((item: any) => ({
       ...item,
@@ -97,7 +102,7 @@ export const ordersService = {
       include: { client: true, items: { include: { product: true } } },
     });
 
-    // Baixa de estoque
+    // Baixa de estoque dos produtos
     await Promise.all(
       data.items.map((item: any) =>
         prisma.product.update({
@@ -114,7 +119,7 @@ export const ordersService = {
     return order;
   },
 
-  async update(id: string, data: any, _updatedBy: string) {
+  async update(id: string, data: any) {
     const existing = await prisma.order.findUnique({ where: { id } });
     if (!existing) throw new AppError('Order not found', 404);
 
@@ -140,25 +145,54 @@ export const ordersService = {
   async updateStatus(id: string, status: string, _updatedBy: string) {
     const existing = await prisma.order.findUnique({
       where: { id },
-      include: { items: true },
+      include: { items: { include: { product: true } } },
     });
     if (!existing) throw new AppError('Order not found', 404);
 
+    // Se for para produção, deduz estoque de insumos
     if (status === 'IN_PRODUCTION' && existing.status !== 'IN_PRODUCTION') {
-      // 🚀 AUTOMAÇÃO: Baixa de insumos (Placeholder para Ficha Técnica/BOM)
-      // Em produção, você cruzaria o OrderItem com uma tabela de Composição.
-      // Aqui deduzimos um genérico "Papel" para demonstrar o fluxo.
-      const prismaClient = prisma as any;
-      const paper = await prismaClient.stockItem?.findFirst?.({
-        where: { name: { contains: 'Papel' } },
+      // Busca insumos relacionados aos produtos do pedido
+      // Para este exemplo, vamos buscar por categoria
+      const productIds = existing.items.map(i => i.productId);
+      const products = await prisma.product.findMany({
+        where: { id: { in: productIds } },
+        include: { category: true },
       });
 
-      if (paper) {
-        const totalSheets = existing.items.reduce((sum: number, i: any) => sum + i.quantity * 100, 0); // Ex: 100 folhas por item
-        await prismaClient.stockItem.update({
-          where: { id: paper.id },
-          data: { quantity: { decrement: totalSheets } },
-        });
+      // Agrupa por categoria para deduzir insumos
+      for (const product of products) {
+        if (product.categoryId) {
+          const stockItems = await prisma.stockItem.findMany({
+            where: {
+              category: product.category?.name || undefined,
+              isActive: true,
+            },
+          });
+
+          for (const stockItem of stockItems) {
+            // Deduz uma quantidade baseada na quantidade do pedido
+            const orderItem = existing.items.find(i => i.productId === product.id);
+            if (orderItem) {
+              const amountToDeduct = orderItem.quantity * 1; // 1 unidade de insumo por produto
+              await prisma.$transaction(async (tx) => {
+                const current = await tx.stockItem.findUnique({
+                  where: { id: stockItem.id },
+                });
+                if (current && current.quantity >= amountToDeduct) {
+                  await tx.stockItem.update({
+                    where: { id: stockItem.id },
+                    data: { quantity: { decrement: amountToDeduct } },
+                  });
+                } else if (current) {
+                  throw new AppError(
+                    `Estoque insuficiente de "${stockItem.name}". Disponível: ${current?.quantity || 0} ${stockItem.unit}`,
+                    400
+                  );
+                }
+              });
+            }
+          }
+        }
       }
     }
 
@@ -167,29 +201,76 @@ export const ordersService = {
       data: {
         status: status as any,
         deliveredAt: status === 'DELIVERED' ? new Date() : existing.deliveredAt,
+        productionStep: status === 'IN_PRODUCTION' ? 'PRINTING' : existing.productionStep,
       },
       include: { client: true },
     });
   },
 
- async updatePaymentStatus(id: string, paymentStatus: string) {
-    const existing = await prisma.order.findUnique({ where: { id } });
+  /**
+   * Update payment status with automatic financial integration
+   */
+  async updatePaymentStatus(id: string, paymentStatus: string) {
+    const existing = await prisma.order.findUnique({
+      where: { id },
+      include: { client: true },
+    });
     if (!existing) throw new AppError('Pedido não encontrado', 404);
 
     const data: any = { paymentStatus: paymentStatus as any };
 
-    // Preenche paidAt quando marca como PAID
+    // Se for PAID, cria transação financeira automaticamente
     if (paymentStatus === 'PAID') {
       data.paidAt = new Date();
 
+      // Cria a transação de receita
       await prisma.$transaction(async (tx) => {
-        const txClient = tx as any;
-
-        await txClient.transaction?.create({
-          data: {
+        // Verifica se já existe uma transação para este pedido
+        const existingTransaction = await tx.transaction.findFirst({
+          where: { 
+            orderId: existing.id,
             type: 'INCOME',
-            category: 'Venda de Pedido',
-            description: `Receita do Pedido ${existing.code}`,
+          },
+        });
+
+        if (!existingTransaction) {
+          await tx.transaction.create({
+            data: {
+              type: 'INCOME',
+              category: 'Venda de Pedido',
+              description: `Receita do Pedido ${existing.code} - ${existing.client?.name || ''}`,
+              amount: existing.total,
+              dueDate: new Date(),
+              paidAt: new Date(),
+              status: 'PAID',
+              orderId: existing.id,
+              clientId: existing.clientId,
+            },
+          });
+        }
+
+        // Atualiza o pedido
+        await tx.order.update({
+          where: { id },
+          data: { paymentStatus: 'PAID', paidAt: new Date() },
+        });
+      });
+
+      // Notifica a equipe sobre o pagamento
+      await notificationsService.notifyTeam('', {
+        title: '💳 Pagamento confirmado',
+        message: `Pedido ${existing.code} foi pago — R$ ${existing.total.toFixed(2)}`,
+        type: 'SUCCESS',
+        metadata: { entity: 'Order', entityId: existing.id, route: '/orders' },
+      });
+    } else if (paymentStatus === 'REFUNDED') {
+      // Cria transação de reembolso (despesa)
+      await prisma.$transaction(async (tx) => {
+        await tx.transaction.create({
+          data: {
+            type: 'EXPENSE',
+            category: 'Reembolso',
+            description: `Reembolso do Pedido ${existing.code} - ${existing.client?.name || ''}`,
             amount: existing.total,
             dueDate: new Date(),
             paidAt: new Date(),
@@ -199,11 +280,17 @@ export const ordersService = {
           },
         });
       });
+
+      await notificationsService.notifyTeam('', {
+        title: '🔄 Reembolso realizado',
+        message: `Pedido ${existing.code} teve reembolso processado.`,
+        type: 'WARNING',
+        metadata: { entity: 'Order', entityId: existing.id, route: '/orders' },
+      });
     }
 
-    return prisma.order.update({
+    return prisma.order.findUnique({
       where: { id },
-      data,
       include: { client: true },
     });
   },
@@ -220,8 +307,6 @@ export const ordersService = {
 
     const count = await prisma.invoice.count();
     const number = `NF-${String(count + 1).padStart(6, '0')}`;
-
-    
 
     return prisma.invoice.create({
       data: { number, orderId, total: order.total, dueDate: order.dueDate },
