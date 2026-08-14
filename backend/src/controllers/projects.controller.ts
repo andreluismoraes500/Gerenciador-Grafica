@@ -4,6 +4,9 @@ import { AuthRequest } from '../middlewares/auth';
 import { createProjectSchema, updateProjectSchema } from '../validators/project.validator';
 import { logActivity } from '../services/activity.service';
 import { notificationsService } from '../services/notifications.service';
+import { prisma } from '../config/database';
+import path from 'path';
+import fs from 'fs';
 
 const getParamId = (value: string | string[] | undefined): string => {
   return Array.isArray(value) ? value[0] ?? '' : value ?? '';
@@ -87,7 +90,6 @@ export const projectsController = {
       const project = await projectsService.updateStatus(id, status, req.user!.id);
       await logActivity(req.user!.id, 'UPDATE_PROJECT_STATUS', 'Project', project.id, { status });
       
-      // Socket para todos
       req.app.get('io')?.emit('project:status-changed', project);
       res.json(project);
     } catch (e) { next(e); }
@@ -108,10 +110,22 @@ export const projectsController = {
     try {
       const files = req.files as Express.Multer.File[];
       const id = getParamId(req.params.id);
+      
+      if (!files || files.length === 0) {
+        return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+      }
+
       const result = await projectsService.uploadFiles(id, files, req.user!.id);
-      await logActivity(req.user!.id, 'UPLOAD_FILES', 'Project', id, { count: files.length });
+      
+      await logActivity(req.user!.id, 'UPLOAD_FILES', 'Project', id, { 
+        count: files.length,
+        files: files.map(f => f.originalname)
+      });
+      
       res.json(result);
-    } catch (e) { next(e); }
+    } catch (e) { 
+      next(e); 
+    }
   },
 
   async updateFile(req: AuthRequest, res: Response, next: NextFunction) {
@@ -131,6 +145,47 @@ export const projectsController = {
       await projectsService.deleteFile(id, fileId, req.user!.id);
       res.status(204).send();
     } catch (e) { next(e); }
+  },
+
+  // 🔧 NOVA ROTA: Download de arquivo
+  async downloadFile(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const projectId = getParamId(req.params.id);
+      const fileId = getParamId(req.params.fileId);
+      
+      const file = await prisma.projectFile.findFirst({
+        where: { id: fileId, projectId }
+      });
+      
+      if (!file) {
+        return res.status(404).json({ error: 'Arquivo não encontrado' });
+      }
+      
+      const uploadDir = process.env.UPLOAD_DIR || './uploads';
+      const filePath = path.join(uploadDir, path.basename(file.url));
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'Arquivo físico não encontrado' });
+      }
+      
+      const stat = fs.statSync(filePath);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.name)}"`);
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Cache-Control', 'no-cache');
+      
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+      
+      fileStream.on('error', (error) => {
+        console.error('Erro no stream do arquivo:', error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Erro ao ler o arquivo' });
+        }
+      });
+    } catch (e) {
+      next(e);
+    }
   },
 
   async addComment(req: AuthRequest, res: Response, next: NextFunction) {

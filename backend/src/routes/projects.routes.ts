@@ -15,6 +15,8 @@ projectsRoutes.post('/:id/complete', requireRole('ADMIN', 'ATTENDANT', 'DESIGNER
 projectsRoutes.post('/:id/files', requireRole('ADMIN', 'DESIGNER'), upload.array('files', 10), projectsController.uploadFiles);
 projectsRoutes.patch('/:id/files/:fileId', requireRole('ADMIN', 'DESIGNER'), projectsController.updateFile);
 projectsRoutes.delete('/:id/files/:fileId', requireRole('ADMIN', 'DESIGNER'), projectsController.deleteFile);
+// 🔧 NOVA ROTA: Download de arquivo
+projectsRoutes.get('/:id/files/:fileId/download', projectsController.downloadFile);
 projectsRoutes.post('/:id/comments', projectsController.addComment);
 projectsRoutes.delete('/:id/comments/:commentId', projectsController.deleteComment);
 projectsRoutes.post('/:id/approve', projectsController.approve);

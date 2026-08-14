@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge, PriorityBadge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ProjectFilesManager } from "./ProjectFilesManager";
+import { ProjectFilesManager } from "@/components/projects/ProjectFilesManager";
 import { cn, formatDate } from "@/lib/utils";
 
 interface ProjectDetailsDialogProps {
@@ -137,8 +137,10 @@ export function ProjectDetailsDialog({
                 </>
               )}
             </div>
-            <DialogClose className="rounded-sm opacity-70 hover:opacity-100">
+            {/* Apenas UM botão de fechar */}
+            <DialogClose className="rounded-sm opacity-70 hover:opacity-100 transition-opacity">
               <X className="h-4 w-4" />
+              <span className="sr-only">Fechar</span>
             </DialogClose>
           </DialogTitle>
         </DialogHeader>
@@ -173,7 +175,6 @@ export function ProjectDetailsDialog({
                 </div>
               ) : (
                 <div className="space-y-6 py-2">
-                  {/* Informações do projeto */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm text-muted-foreground">Cliente</p>
@@ -206,7 +207,6 @@ export function ProjectDetailsDialog({
                     </div>
                   )}
 
-                  {/* Resumo de arquivos */}
                   <div className="bg-muted/30 p-4 rounded-lg">
                     <p className="text-sm text-muted-foreground mb-2">
                       Arquivos
@@ -234,7 +234,6 @@ export function ProjectDetailsDialog({
                     </div>
                   </div>
 
-                  {/* Progresso */}
                   {!isCompleted && !isCancelled && (
                     <div>
                       <p className="text-sm text-muted-foreground mb-2">
@@ -288,7 +287,6 @@ export function ProjectDetailsDialog({
                     </div>
                   )}
 
-                  {/* Comentários */}
                   {project?.comments?.length > 0 && (
                     <div>
                       <p className="text-sm text-muted-foreground mb-2">
@@ -324,6 +322,7 @@ export function ProjectDetailsDialog({
                   projectId={projectId}
                   projectTitle={project?.title || ""}
                   isDesigner={isDesigner}
+                  onClose={() => onOpenChange(false)}
                 />
               )}
             </TabsContent>
@@ -448,7 +447,6 @@ export function ProjectDetailsDialog({
                       </div>
                     </div>
 
-                    {/* Informações de Estoque */}
                     {project?.order && (
                       <div className="border-t pt-4">
                         <h4 className="text-sm font-semibold mb-2">

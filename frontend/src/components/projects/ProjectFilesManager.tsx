@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import axios from "axios";
 import {
   Upload,
-  X,
   File,
   Image,
   FileArchive,
@@ -13,15 +13,16 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
+  FolderOpen,
+  X,
 } from "lucide-react";
+import { useDropzone } from "react-dropzone";
 import { toast } from "sonner";
 import api from "@/api/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatDate, formatFileSize } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth.store";
 
 interface ProjectFile {
   id: string;
@@ -39,9 +40,10 @@ interface ProjectFilesManagerProps {
   projectId: string;
   projectTitle: string;
   isDesigner?: boolean;
+  onClose?: () => void;
 }
 
-const FILE_ICONS: Record<string, any> = {
+const FILE_ICONS: Record<string, { icon: any; color: string }> = {
   PSD: { icon: Image, color: "text-blue-500" },
   AI: { icon: Image, color: "text-orange-500" },
   PDF: { icon: FileText, color: "text-red-500" },
@@ -58,22 +60,25 @@ const DEFAULT_ICON = { icon: File, color: "text-gray-400" };
 
 export function ProjectFilesManager({
   projectId,
-  projectTitle,
-  isDesigner = false,
+  isDesigner = true,
+  onClose,
 }: ProjectFilesManagerProps) {
-  const qc = useQueryClient();
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
-  // Query para buscar arquivos do projeto
-  const { data: project, isLoading } = useQuery({
-    queryKey: ["project", projectId, "files"],
+  const {
+    data: project,
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ["project", projectId],
     queryFn: () => api.get(`/projects/${projectId}`).then((r) => r.data),
+    enabled: !!projectId,
   });
 
   const files = project?.files || [];
 
-  // Mutation para upload de arquivos
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
       const response = await api.post(
@@ -93,77 +98,134 @@ export function ProjectFilesManager({
       );
       return response.data;
     },
-    onSuccess: () => {
-      toast.success("Arquivo(s) enviado(s) com sucesso!");
-      qc.invalidateQueries({ queryKey: ["project", projectId, "files"] });
+    onSuccess: (data) => {
+      toast.success(`${data.length || "Arquivo(s)"} enviado(s) com sucesso!`);
+      refetch();
       setUploading(false);
       setUploadProgress(0);
     },
     onError: (error: any) => {
-      toast.error(
-        error?.response?.data?.error || "Erro ao fazer upload dos arquivos.",
-      );
+      const message =
+        error?.response?.data?.error || "Erro ao fazer upload dos arquivos.";
+      toast.error(message);
       setUploading(false);
       setUploadProgress(0);
     },
   });
 
-  // Mutation para deletar arquivo
   const deleteMutation = useMutation({
     mutationFn: (fileId: string) =>
       api.delete(`/projects/${projectId}/files/${fileId}`),
     onSuccess: () => {
       toast.success("Arquivo removido com sucesso.");
-      qc.invalidateQueries({ queryKey: ["project", projectId, "files"] });
+      refetch();
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.error || "Erro ao remover arquivo.");
     },
   });
 
-  // Mutation para marcar/desmarcar como final
   const toggleFinalMutation = useMutation({
     mutationFn: ({ fileId, isFinal }: { fileId: string; isFinal: boolean }) =>
       api.patch(`/projects/${projectId}/files/${fileId}`, { isFinal }),
     onSuccess: () => {
       toast.success("Arquivo atualizado com sucesso.");
-      qc.invalidateQueries({ queryKey: ["project", projectId, "files"] });
+      refetch();
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.error || "Erro ao atualizar arquivo.");
     },
   });
 
-  // Configuração do Dropzone
+  // 🔧 CORREÇÃO: Função de download melhorada
+  const handleDownload = async (file: ProjectFile) => {
+    try {
+      setDownloading(file.id);
+
+      // Extrai o nome do arquivo da URL
+      const filename = file.url.split("/").pop() || file.name;
+
+      // Usa a rota específica de download do backend
+      const baseUrl =
+        (import.meta as any).env?.VITE_API_URL || "http://localhost:4000/api";
+      const downloadUrl = `${baseUrl.replace("/api", "")}/files/download/${filename}`;
+
+      console.log("[Download] URL:", downloadUrl);
+
+      // Faz o download com axios
+      const response = await axios.get(downloadUrl, {
+        responseType: "blob",
+        timeout: 30000,
+        headers: {
+          Authorization: `Bearer ${useAuthStore.getState().token}`,
+        },
+      });
+
+      // Cria URL para o blob
+      const blob = new Blob([response.data]);
+      const url = window.URL.createObjectURL(blob);
+
+      // Cria link para download
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.name;
+      document.body.appendChild(link);
+      link.click();
+
+      // Limpa
+      setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }, 100);
+
+      toast.success(`Download de "${file.name}" iniciado!`);
+    } catch (error) {
+      console.error("Erro no download:", error);
+
+      // Tentativa alternativa: abrir diretamente
+      try {
+        const filename = file.url.split("/").pop() || file.name;
+        const baseUrl =
+          (import.meta as any).env?.VITE_API_URL || "http://localhost:4000/api";
+        const directUrl = `${baseUrl.replace("/api", "")}/uploads/${filename}`;
+        window.open(directUrl, "_blank");
+        toast.info("Tentando abrir o arquivo em nova aba...");
+      } catch (fallbackError) {
+        toast.error("Erro ao baixar o arquivo. Tente novamente.");
+      }
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      if (acceptedFiles.length === 0) return;
+
+      setUploading(true);
+      setUploadProgress(0);
+
+      const formData = new FormData();
+      acceptedFiles.forEach((file) => {
+        formData.append("files", file);
+      });
+
+      uploadMutation.mutate(formData);
+    },
+    [uploadMutation],
+  );
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
     accept: {
       "image/*": [".psd", ".ai", ".png", ".jpg", ".jpeg", ".gif", ".webp"],
       "application/pdf": [".pdf"],
       "application/zip": [".zip"],
       "application/x-rar-compressed": [".rar"],
     },
-    maxSize: 50 * 1024 * 1024, // 50MB
-    onDrop: handleDrop,
+    maxSize: 50 * 1024 * 1024,
     disabled: uploading,
   });
-
-  async function handleDrop(acceptedFiles: File[]) {
-    if (acceptedFiles.length === 0) return;
-
-    setUploading(true);
-    setUploadProgress(0);
-
-    const formData = new FormData();
-    acceptedFiles.forEach((file) => {
-      formData.append("files", file);
-    });
-
-    try {
-      await uploadMutation.mutateAsync(formData);
-    } catch (error) {
-      // Error handled by mutation
-    }
-  }
 
   const handleDelete = (fileId: string) => {
     if (confirm("Tem certeza que deseja remover este arquivo?")) {
@@ -175,14 +237,12 @@ export function ProjectFilesManager({
     toggleFinalMutation.mutate({ fileId, isFinal: !currentState });
   };
 
-  const handleDownload = (file: ProjectFile) => {
-    window.open(file.url, "_blank");
-  };
-
   const getFileIcon = (fileType: string) => {
     const type = fileType.toUpperCase();
     return FILE_ICONS[type] || DEFAULT_ICON;
   };
+
+  const hasFinalArt = files.some((f: ProjectFile) => f.isFinal);
 
   if (isLoading) {
     return (
@@ -196,6 +256,45 @@ export function ProjectFilesManager({
 
   return (
     <div className="space-y-6">
+      {/* Header com botão de fechar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FolderOpen className="h-5 w-5 text-muted-foreground" />
+          <h3 className="text-lg font-semibold">Gerenciar Arquivos</h3>
+        </div>
+        {onClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+
+      {/* Status da Arte Final */}
+      <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+        <div className="flex items-center gap-2">
+          <div
+            className={cn(
+              "h-3 w-3 rounded-full",
+              hasFinalArt ? "bg-green-500" : "bg-yellow-500",
+            )}
+          />
+          <span className="text-sm font-medium">
+            {hasFinalArt
+              ? "Arte final definida ✅"
+              : "Nenhuma arte final marcada ⚠️"}
+          </span>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {files.filter((f: ProjectFile) => f.isFinal).length} de {files.length}{" "}
+          arquivo(s)
+        </span>
+      </div>
+
       {/* Área de Upload */}
       <div
         {...getRootProps()}
@@ -213,7 +312,7 @@ export function ProjectFilesManager({
           <div className="space-y-3">
             <Loader2 className="h-10 w-10 mx-auto animate-spin text-primary" />
             <p className="text-sm font-medium">Enviando arquivo...</p>
-            <div className="w-full max-w-xs mx-auto bg-muted rounded-full h-2">
+            <div className="w-full max-w-xs mx-auto bg-muted rounded-full h-2 overflow-hidden">
               <div
                 className="bg-primary h-2 rounded-full transition-all duration-300"
                 style={{ width: `${uploadProgress}%` }}
@@ -239,6 +338,7 @@ export function ProjectFilesManager({
               className="mt-3"
               onClick={(e) => e.stopPropagation()}
             >
+              <FolderOpen className="mr-2 h-4 w-4" />
               Selecionar arquivos
             </Button>
           </>
@@ -262,6 +362,7 @@ export function ProjectFilesManager({
             {files.map((file: ProjectFile) => {
               const { icon: FileIcon, color } = getFileIcon(file.type);
               const isFinal = file.isFinal;
+              const isDownloading = downloading === file.id;
 
               return (
                 <div
@@ -303,8 +404,13 @@ export function ProjectFilesManager({
                       className="h-8 w-8"
                       onClick={() => handleDownload(file)}
                       title="Baixar arquivo"
+                      disabled={isDownloading}
                     >
-                      <Download className="h-4 w-4" />
+                      {isDownloading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
                     </Button>
 
                     {isDesigner && (
@@ -344,7 +450,7 @@ export function ProjectFilesManager({
           </div>
         </div>
       ) : (
-        <div className="text-center py-8 text-muted-foreground">
+        <div className="text-center py-8 text-muted-foreground border rounded-lg">
           <File className="h-10 w-10 mx-auto opacity-30 mb-2" />
           <p className="text-sm">
             Nenhum arquivo vinculado a este projeto ainda.
@@ -354,125 +460,23 @@ export function ProjectFilesManager({
           </p>
         </div>
       )}
+
+      {/* Dica para conclusão */}
+      {isDesigner && !hasFinalArt && files.length > 0 && (
+        <div className="flex items-start gap-2 p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+          <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm text-yellow-800 dark:text-yellow-300 font-medium">
+              Para concluir este projeto, você precisa marcar um arquivo como
+              "Arte Final"
+            </p>
+            <p className="text-xs text-yellow-700 dark:text-yellow-400">
+              Clique no ícone <FileCheck className="inline h-3 w-3" /> ao lado
+              do arquivo para marcá-lo como arte final.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
-function useDropzone({
-  accept,
-  maxSize,
-  onDrop,
-  disabled,
-}: {
-  accept: Record<string, string[]>;
-  maxSize: number;
-  onDrop: (acceptedFiles: File[]) => Promise<void> | void;
-  disabled: boolean;
-}): {
-  getRootProps: () => any;
-  getInputProps: () => any;
-  isDragActive: boolean;
-} {
-  const [isDragActive, setIsDragActive] = useState(false);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  const isAcceptedFile = (file: File) => {
-    const fileName = file.name.toLowerCase();
-    const extension = `.${fileName.split(".").pop() || ""}`;
-    const acceptedExtensions = Object.values(accept)
-      .flat()
-      .map((value) => value.toLowerCase());
-
-    const mimeMatches = Object.entries(accept).some(
-      ([mimeType, extensions]) => {
-        if (mimeType.endsWith("/*")) {
-          const baseType = mimeType.slice(0, -1);
-          return file.type.startsWith(baseType);
-        }
-
-        if (file.type === mimeType) {
-          return true;
-        }
-
-        return extensions.some((ext) => ext.toLowerCase() === extension);
-      },
-    );
-
-    const extensionMatches = acceptedExtensions.includes(extension);
-
-    return mimeMatches || extensionMatches;
-  };
-
-  const handleFiles = async (fileList: FileList | File[] | null) => {
-    if (disabled || !fileList) return;
-
-    const files = Array.from(fileList);
-    const validFiles = files.filter(
-      (file) =>
-        file.size <= maxSize &&
-        (isAcceptedFile(file) || Object.keys(accept).length === 0),
-    );
-
-    if (validFiles.length > 0) {
-      await onDrop(validFiles);
-    }
-
-    const rejectedCount = files.length - validFiles.length;
-    if (rejectedCount > 0) {
-      toast.warning(
-        `Alguns arquivos foram ignorados. Verifique o tipo ou o tamanho máximo (até ${Math.round(maxSize / (1024 * 1024))}MB).`,
-      );
-    }
-  };
-
-  const getRootProps = () => ({
-    onClick: (event: React.MouseEvent<HTMLDivElement>) => {
-      if (disabled) return;
-      if ((event.target as HTMLElement).closest("button")) return;
-      inputRef.current?.click();
-    },
-    onDragEnter: (event: React.DragEvent<HTMLDivElement>) => {
-      if (disabled) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setIsDragActive(true);
-    },
-    onDragOver: (event: React.DragEvent<HTMLDivElement>) => {
-      if (disabled) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setIsDragActive(true);
-    },
-    onDragLeave: (event: React.DragEvent<HTMLDivElement>) => {
-      if (disabled) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setIsDragActive(false);
-    },
-    onDrop: async (event: React.DragEvent<HTMLDivElement>) => {
-      if (disabled) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setIsDragActive(false);
-      await handleFiles(event.dataTransfer.files);
-    },
-  });
-
-  const getInputProps = () => ({
-    ref: inputRef,
-    type: "file",
-    multiple: true,
-    accept: Object.values(accept).flat().join(","),
-    disabled,
-    onChange: async (event: React.ChangeEvent<HTMLInputElement>) => {
-      if (disabled) return;
-      await handleFiles(event.target.files);
-      event.target.value = "";
-    },
-  });
-
-  return {
-    getRootProps,
-    getInputProps,
-    isDragActive,
-  };
 }
