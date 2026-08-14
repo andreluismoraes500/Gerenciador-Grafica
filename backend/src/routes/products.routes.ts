@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { productsController } from '../controllers/products.controller';
 import { requireRole } from '../middlewares/auth';
+
 export const productsRoutes = Router();
 
 // 🚨 ROTAS ESPECÍFICAS DEVEM VIR ANTES DE /:id

@@ -101,7 +101,6 @@ export const projectsService = {
     });
     if (!existing) throw new AppError('Project not found', 404);
 
-    // Verifica se o projeto tem arte final antes de ir para produção
     if (status === 'PRODUCTION' || status === 'COMPLETED') {
       const hasFinalArt = existing.files.some(f => f.isFinal);
       if (!hasFinalArt) {
@@ -112,12 +111,10 @@ export const projectsService = {
       }
     }
 
-    // Se for concluído, chama completeProject
     if (status === 'COMPLETED') {
       return this.completeProject(id, updatedBy);
     }
 
-    // Se for para produção, atualiza o pedido vinculado
     if (status === 'PRODUCTION' && existing.orderId) {
       await prisma.order.update({
         where: { id: existing.orderId },
@@ -134,10 +131,6 @@ export const projectsService = {
     });
   },
 
-  /**
-   * Complete project - marks as COMPLETED, updates order status,
-   * deducts stock, creates notifications
-   */
   async completeProject(projectId: string, completedBy: string) {
     const project = await prisma.project.findUnique({
       where: { id: projectId },
@@ -160,7 +153,6 @@ export const projectsService = {
     if (!project) throw new AppError('Project not found', 404);
     if (project.status === 'COMPLETED') throw new AppError('Project already completed', 400);
 
-    // Verifica arte final
     const hasFinalArt = project.files.some(f => f.isFinal);
     if (!hasFinalArt) {
       throw new AppError(
@@ -169,9 +161,7 @@ export const projectsService = {
       );
     }
 
-    // Executa todas as operações em uma transação
     return await prisma.$transaction(async (tx) => {
-      // 1. Atualiza o status do projeto
       const updatedProject = await tx.project.update({
         where: { id: projectId },
         data: {
@@ -180,7 +170,6 @@ export const projectsService = {
         },
       });
 
-      // 2. Se houver pedido vinculado, atualiza seu status e etapa de produção
       if (project.orderId) {
         await tx.order.update({
           where: { id: project.orderId },
@@ -190,12 +179,9 @@ export const projectsService = {
           },
         });
 
-        // 3. DEDUZ ESTOQUE DOS INSUMOS (StockItems)
-        // Baseado nos produtos do pedido
+        // Dedução de estoque de insumos (stockItems)
         const orderItems = project.order?.items || [];
         for (const item of orderItems) {
-          // Busca insumos relacionados ao produto (através de uma relação de composição)
-          // Por simplicidade, vamos buscar um insumo genérico baseado na categoria
           const stockItems = await tx.stockItem.findMany({
             where: {
               category: item.product.categoryId ? { equals: item.product.categoryId } : undefined,
@@ -204,9 +190,7 @@ export const projectsService = {
           });
 
           if (stockItems.length > 0) {
-            // Para demonstração, deduzimos uma quantidade proporcional do primeiro insumo
-            // Em produção, você teria uma tabela de BOM (Bill of Materials)
-            const amountToDeduct = item.quantity * 1; // 1 unidade por item
+            const amountToDeduct = item.quantity * 1;
             const stockItem = stockItems[0];
             
             if (stockItem.quantity >= amountToDeduct) {
@@ -217,7 +201,6 @@ export const projectsService = {
                 },
               });
 
-              // Notifica se o estoque ficou baixo
               if (stockItem.quantity - amountToDeduct <= stockItem.minStock) {
                 await notificationsService.notifyTeam(completedBy, {
                   title: '⚠️ Estoque baixo de insumo',
@@ -236,8 +219,6 @@ export const projectsService = {
         }
       }
 
-      // 4. Cria notificações
-      // Notifica o designer que o projeto foi concluído
       if (project.designerId) {
         await notificationsService.create(project.designerId, {
           title: '✅ Projeto concluído',
@@ -247,7 +228,6 @@ export const projectsService = {
         });
       }
 
-      // Notifica a equipe
       await notificationsService.notifyTeam(completedBy, {
         title: '📦 Projeto finalizado',
         message: `"${project.title}" foi concluído${project.client ? ` para ${project.client.name}` : ''}.`,
@@ -292,7 +272,6 @@ export const projectsService = {
     const file = await prisma.projectFile.findFirst({ where: { id: fileId, projectId } });
     if (!file) throw new AppError('File not found', 404);
 
-    // Se está marcando como final, desmarca os outros
     if (data.isFinal) {
       await prisma.projectFile.updateMany({
         where: { projectId, isFinal: true },
@@ -335,7 +314,6 @@ export const projectsService = {
     });
     if (!project) throw new AppError('Project not found', 404);
 
-    // Verifica se há arte final
     const hasFinalArt = project.files.some(f => f.isFinal);
     if (!hasFinalArt) {
       throw new AppError('O projeto precisa ter uma arte final marcada para ser aprovado.', 400);
@@ -343,7 +321,6 @@ export const projectsService = {
 
     const approval = await prisma.approval.create({ data: { projectId, ...data } });
 
-    // Atualiza para PRODUCTION e notifica
     await prisma.project.update({
       where: { id: projectId },
       data: { status: 'PRODUCTION' },

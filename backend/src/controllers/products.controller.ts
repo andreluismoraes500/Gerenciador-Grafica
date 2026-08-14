@@ -1,5 +1,5 @@
 import { Response, NextFunction } from 'express';
-import { productsService } from '../services/products.service';
+import { productsService } from '../services/products.service'; // <-- CORRIGIDO
 import { AuthRequest } from '../middlewares/auth';
 import { createProductSchema, updateProductSchema } from '../validators/product.validator';
 import { logActivity } from '../services/activity.service';
@@ -21,7 +21,7 @@ export const productsController = {
 
   async getById(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const product = await productsService.getById(req.params.id);
+      const product = await productsService.getById(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
       res.json(product);
     } catch (e) { next(e); }
   },
@@ -38,7 +38,7 @@ export const productsController = {
   async update(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const data = updateProductSchema.parse(req.body);
-      const product = await productsService.update(req.params.id, data, req.user!.id);
+      const product = await productsService.update(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, data, req.user!.id);
       await logActivity(req.user!.id, 'UPDATE_PRODUCT', 'Product', product.id, { name: product.name });
       res.json(product);
     } catch (e) { next(e); }
@@ -46,13 +46,14 @@ export const productsController = {
 
   async delete(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      await productsService.delete(req.params.id, req.user!.id);
-      await logActivity(req.user!.id, 'DELETE_PRODUCT', 'Product', req.params.id);
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      await productsService.delete(id, req.user!.id);
+      await logActivity(req.user!.id, 'DELETE_PRODUCT', 'Product', id);
       res.status(204).send();
     } catch (e) { next(e); }
   },
 
-  async listCategories(req: AuthRequest, res: Response, next: NextFunction) {
+  async listCategories(_req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const categories = await productsService.listCategories();
       res.json(categories);
@@ -67,7 +68,7 @@ export const productsController = {
     } catch (e) { next(e); }
   },
 
-  async getLowStock(req: AuthRequest, res: Response, next: NextFunction) {
+  async getLowStock(_req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const products = await productsService.getLowStock();
       res.json(products);
@@ -77,7 +78,7 @@ export const productsController = {
   async updateStock(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { quantity } = req.body;
-      const product = await productsService.updateStock(req.params.id, quantity);
+      const product = await productsService.updateStock(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, quantity);
       res.json(product);
     } catch (e) { next(e); }
   }

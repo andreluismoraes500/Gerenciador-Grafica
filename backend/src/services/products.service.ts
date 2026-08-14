@@ -5,327 +5,217 @@ import { notificationsService } from './notifications.service';
 interface ListParams {
   page: number;
   limit: number;
-  status?: string;
-  clientId?: string;
-  designerId?: string;
-  userId: string;
-  role: string;
+  search?: string;
+  category?: string;
+  isActive?: boolean;
 }
 
-const VALID_STATUSES = ['ANALYSIS', 'CREATING', 'AWAITING_APPROVAL', 'PRODUCTION', 'COMPLETED', 'CANCELLED'];
-
-export const projectsService = {
-  async list({ page, limit, status, clientId, designerId, userId, role }: ListParams) {
+export const productsService = {
+  async list({ page, limit, search, category, isActive }: ListParams) {
     const where: any = {};
-    if (status) where.status = status;
-    if (clientId) where.clientId = clientId;
-    if (designerId) where.designerId = designerId;
-
-    if (role === 'DESIGNER' && !designerId) where.designerId = userId;
-    if (role === 'CLIENT') {
-      const client = await prisma.client.findUnique({ where: { userId } });
-      where.clientId = client?.id ?? '__none__';
+    
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { sku: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+    
+    if (category) {
+      where.categoryId = category;
+    }
+    
+    if (isActive !== undefined) {
+      where.isActive = isActive;
     }
 
     const [data, total] = await Promise.all([
-      prisma.project.findMany({
+      prisma.product.findMany({
         where,
-        include: { client: true, designer: true, files: true, order: true },
+        include: {
+          category: true,
+        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      prisma.project.count({ where }),
+      prisma.product.count({ where }),
     ]);
 
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   },
 
   async getById(id: string) {
-    const project = await prisma.project.findUnique({
+    const product = await prisma.product.findUnique({
       where: { id },
-      include: {
-        client: true,
-        designer: true,
-        files: { orderBy: { createdAt: 'desc' } },
-        comments: { orderBy: { createdAt: 'asc' }, include: { user: true } },
-        approvals: true,
-        tasks: true,
-        order: {
-          include: {
-            items: { include: { product: true } }
-          }
-        },
-      },
+      include: { category: true, orderItems: true, quoteItems: true },
     });
-    if (!project) throw new AppError('Project not found', 404);
-    return project;
+    if (!product) throw new AppError('Product not found', 404);
+    return product;
   },
 
   async create(data: any, _createdBy: string) {
-    const project = await prisma.project.create({
+    // Verifica se SKU já existe
+    const existing = await prisma.product.findUnique({
+      where: { sku: data.sku },
+    });
+    if (existing) throw new AppError('SKU already exists', 409);
+
+    // Calcula margem automaticamente
+    const margin = data.costPrice > 0 
+      ? ((data.salePrice - data.costPrice) / data.costPrice) * 100 
+      : 0;
+
+    return prisma.product.create({
       data: {
         ...data,
-        dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+        margin,
       },
-      include: { client: true, designer: true },
+      include: { category: true },
     });
-    return project;
   },
 
   async update(id: string, data: any, _updatedBy: string) {
-    const existing = await prisma.project.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Project not found', 404);
+    const existing = await prisma.product.findUnique({ where: { id } });
+    if (!existing) throw new AppError('Product not found', 404);
 
-    return prisma.project.update({
+    // Verifica duplicidade de SKU
+    if (data.sku && data.sku !== existing.sku) {
+      const duplicate = await prisma.product.findUnique({
+        where: { sku: data.sku },
+      });
+      if (duplicate) throw new AppError('SKU already exists', 409);
+    }
+
+    // Recalcula margem se preços foram alterados
+    const costPrice = data.costPrice ?? existing.costPrice;
+    const salePrice = data.salePrice ?? existing.salePrice;
+    const margin = costPrice > 0 
+      ? ((salePrice - costPrice) / costPrice) * 100 
+      : existing.margin;
+
+    return prisma.product.update({
       where: { id },
       data: {
         ...data,
-        dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+        margin,
       },
+      include: { category: true },
     });
   },
 
   async delete(id: string, _deletedBy: string) {
-    const existing = await prisma.project.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Project not found', 404);
-    await prisma.project.delete({ where: { id } });
-  },
-
-  async updateStatus(id: string, status: string, updatedBy: string) {
-    if (!VALID_STATUSES.includes(status)) throw new AppError('Invalid status', 400);
-
-    const existing = await prisma.project.findUnique({ 
+    const existing = await prisma.product.findUnique({
       where: { id },
-      include: { files: true, order: { include: { items: { include: { product: true } } } } }
+      include: {
+        _count: {
+          select: {
+            orderItems: true,
+            quoteItems: true,
+            kits: true,
+          },
+        },
+      },
     });
-    if (!existing) throw new AppError('Project not found', 404);
+    if (!existing) throw new AppError('Product not found', 404);
 
-    if (status === 'PRODUCTION' || status === 'COMPLETED') {
-      const hasFinalArt = existing.files.some(f => f.isFinal);
-      if (!hasFinalArt) {
-        throw new AppError(
-          'O projeto precisa ter uma arte final marcada antes de ser enviado para produção.',
-          400
-        );
-      }
-    }
-
-    if (status === 'COMPLETED') {
-      return this.completeProject(id, updatedBy);
-    }
-
-    if (status === 'PRODUCTION' && existing.orderId) {
-      await prisma.order.update({
-        where: { id: existing.orderId },
-        data: { status: 'IN_PRODUCTION' }
+    // Verifica se o produto está sendo usado em pedidos ou orçamentos
+    const { orderItems, quoteItems, kits } = existing._count;
+    if (orderItems > 0 || quoteItems > 0 || kits > 0) {
+      // Em vez de excluir, apenas desativa
+      return prisma.product.update({
+        where: { id },
+        data: { isActive: false },
       });
     }
 
-    return prisma.project.update({
-      where: { id },
+    return prisma.product.delete({ where: { id } });
+  },
+
+  async listCategories() {
+    return prisma.category.findMany({
+      where: { isActive: true },
+      include: {
+        children: true,
+        _count: { select: { products: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+  },
+
+  async createCategory(data: { name: string; description?: string; parentId?: string }) {
+    const slug = data.name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    const existing = await prisma.category.findUnique({
+      where: { slug },
+    });
+    if (existing) throw new AppError('Category with this name already exists', 409);
+
+    return prisma.category.create({
       data: {
-        status: status as any,
-        completedAt: status === 'COMPLETED' ? new Date() : existing.completedAt,
+        name: data.name,
+        slug,
+        description: data.description,
+        parentId: data.parentId,
       },
     });
   },
 
-  async completeProject(projectId: string, completedBy: string) {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      include: {
-        client: true,
-        designer: true,
-        order: {
-          include: {
-            items: {
-              include: {
-                product: true
-              }
-            }
-          }
-        },
-        files: true,
+  async getLowStock() {
+    return prisma.product.findMany({
+      where: {
+        isActive: true,
+        stock: { lte: prisma.product.fields.minStock },
       },
+      include: { category: true },
+      orderBy: { stock: 'asc' },
+    });
+  },
+
+  async updateStock(id: string, quantity: number) {
+    const product = await prisma.product.findUnique({ where: { id } });
+    if (!product) throw new AppError('Product not found', 404);
+
+    const newStock = product.stock + quantity;
+    if (newStock < 0) {
+      throw new AppError('Stock cannot be negative', 400);
+    }
+
+    const updated = await prisma.product.update({
+      where: { id },
+      data: { stock: newStock },
     });
 
-    if (!project) throw new AppError('Project not found', 404);
-    if (project.status === 'COMPLETED') throw new AppError('Project already completed', 400);
-
-    const hasFinalArt = project.files.some(f => f.isFinal);
-    if (!hasFinalArt) {
-      throw new AppError(
-        'O projeto precisa ter uma arte final marcada antes de ser concluído.',
-        400
+    // Notifica se estoque está baixo
+    if (updated.stock <= updated.minStock) {
+      await notificationsService.notifyLowStock(
+        updated.name,
+        updated.sku,
+        updated.stock,
+        updated.minStock
       );
     }
 
-    return await prisma.$transaction(async (tx) => {
-      const updatedProject = await tx.project.update({
-        where: { id: projectId },
-        data: {
-          status: 'COMPLETED',
-          completedAt: new Date(),
-        },
-      });
+    return updated;
+  },
 
-      if (project.orderId) {
-        await tx.order.update({
-          where: { id: project.orderId },
-          data: {
-            status: 'READY',
-            productionStep: 'SHIPPING',
-          },
-        });
-
-        const orderItems = project.order?.items || [];
-        for (const item of orderItems) {
-          const stockItems = await tx.stockItem.findMany({
-            where: {
-              category: item.product.categoryId ? { equals: item.product.categoryId } : undefined,
-              isActive: true,
-            },
-          });
-
-          if (stockItems.length > 0) {
-            const amountToDeduct = item.quantity * 1;
-            const stockItem = stockItems[0];
-            
-            if (stockItem.quantity >= amountToDeduct) {
-              await tx.stockItem.update({
-                where: { id: stockItem.id },
-                data: {
-                  quantity: { decrement: amountToDeduct },
-                },
-              });
-
-              if (stockItem.quantity - amountToDeduct <= stockItem.minStock) {
-                await notificationsService.notifyTeam(completedBy, {
-                  title: '⚠️ Estoque baixo de insumo',
-                  message: `O insumo "${stockItem.name}" está com estoque baixo (${stockItem.quantity - amountToDeduct} ${stockItem.unit}).`,
-                  type: 'WARNING',
-                  metadata: { entity: 'StockItem', entityId: stockItem.id, route: '/stock' },
-                });
-              }
-            } else {
-              throw new AppError(
-                `Estoque insuficiente para o insumo "${stockItem.name}". Disponível: ${stockItem.quantity}, Necessário: ${amountToDeduct}`,
-                400
-              );
-            }
-          }
-        }
-      }
-
-      if (project.designerId) {
-        await notificationsService.create(project.designerId, {
-          title: '✅ Projeto concluído',
-          message: `O projeto "${project.title}" foi concluído e está pronto para entrega.`,
-          type: 'SUCCESS',
-          metadata: { entity: 'Project', entityId: projectId, route: '/projects' },
-        });
-      }
-
-      await notificationsService.notifyTeam(completedBy, {
-        title: '📦 Projeto finalizado',
-        message: `"${project.title}" foi concluído${project.client ? ` para ${project.client.name}` : ''}.`,
-        type: 'SUCCESS',
-        metadata: { entity: 'Project', entityId: projectId, route: '/projects' },
-      });
-
-      return updatedProject;
+  async checkAndNotifyLowStock(productId: string) {
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
     });
-  },
-
-  // 🔧 CORREÇÃO: Upload com nome original do arquivo
-  async uploadFiles(projectId: string, files: Express.Multer.File[], uploadedBy: string) {
-    const project = await prisma.project.findUnique({ where: { id: projectId } });
-    if (!project) throw new AppError('Project not found', 404);
-    if (!files || files.length === 0) throw new AppError('No files provided', 400);
-
-    const created = await prisma.$transaction(
-      files.map(file =>
-        prisma.projectFile.create({
-          data: {
-            projectId,
-            name: file.originalname,
-            url: `/uploads/${file.filename}`,
-            type: (file.originalname.split('.').pop() || '').toUpperCase(),
-            size: file.size,
-            uploadedBy,
-          },
-        }),
-      ),
-    );
-
-    return created;
-  },
-
-  async deleteFile(projectId: string, fileId: string, _deletedBy: string) {
-    const file = await prisma.projectFile.findFirst({ where: { id: fileId, projectId } });
-    if (!file) throw new AppError('File not found', 404);
-    await prisma.projectFile.delete({ where: { id: fileId } });
-  },
-
-  async updateFile(projectId: string, fileId: string, data: { isFinal?: boolean }, _updatedBy: string) {
-    const file = await prisma.projectFile.findFirst({ where: { id: fileId, projectId } });
-    if (!file) throw new AppError('File not found', 404);
-
-    if (data.isFinal) {
-      await prisma.projectFile.updateMany({
-        where: { projectId, isFinal: true },
-        data: { isFinal: false },
-      });
+    if (product && product.stock <= product.minStock) {
+      await notificationsService.notifyLowStock(
+        product.name,
+        product.sku,
+        product.stock,
+        product.minStock
+      );
     }
-
-    return prisma.projectFile.update({
-      where: { id: fileId },
-      data: { isFinal: data.isFinal },
-    });
-  },
-
-  async addComment(
-    projectId: string,
-    data: { content: string; isInternal?: boolean; parentId?: string; userId: string },
-  ) {
-    const project = await prisma.project.findUnique({ where: { id: projectId } });
-    if (!project) throw new AppError('Project not found', 404);
-
-    return prisma.comment.create({
-      data: { projectId, ...data },
-      include: { user: true },
-    });
-  },
-
-  async deleteComment(projectId: string, commentId: string, _deletedBy: string) {
-    const comment = await prisma.comment.findFirst({ where: { id: commentId, projectId } });
-    if (!comment) throw new AppError('Comment not found', 404);
-    await prisma.comment.delete({ where: { id: commentId } });
-  },
-
-  async approve(
-    projectId: string,
-    data: { approvedBy: string; approvedEmail: string; signature?: string; notes?: string },
-  ) {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      include: { files: true, order: { include: { items: true } } }
-    });
-    if (!project) throw new AppError('Project not found', 404);
-
-    const hasFinalArt = project.files.some(f => f.isFinal);
-    if (!hasFinalArt) {
-      throw new AppError('O projeto precisa ter uma arte final marcada para ser aprovado.', 400);
-    }
-
-    const approval = await prisma.approval.create({ data: { projectId, ...data } });
-
-    await prisma.project.update({
-      where: { id: projectId },
-      data: { status: 'PRODUCTION' },
-    });
-
-    return approval;
   },
 };
