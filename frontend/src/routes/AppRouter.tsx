@@ -8,14 +8,14 @@ import { RegisterPage } from "@/features/auth/RegisterPage";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { ClientsPage } from "@/features/clients/ClientsPage";
 import { ProductsPage } from "@/features/products/ProductsPage";
-import { ProjectsPage } from "@/features/projects/ProjectsPage";
-import { OrdersPage } from "@/features/orders/OrdersPage";
 import { QuotesPage } from "@/features/quotes/QuotesPage";
+import { OrdersPage } from "@/features/orders/OrdersPage";
+import { ProjectsPage } from "@/features/projects/ProjectsPage";
+import { StockItemsPage } from "@/features/stock/StockItemsPage";
 import { SuppliersPage } from "@/features/suppliers/SuppliersPage";
+import { TransactionsPage } from "@/features/transactions/TransactionsPage";
 import { TasksPage } from "@/features/tasks/TasksPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
-import { TransactionsPage } from "@/features/transactions/TransactionsPage";
-import { StockItemsPage } from "@/features/stock/StockItemsPage";
 
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
   const user = useAuthStore((s) => s.user);
@@ -43,17 +43,18 @@ export default function AppRouter() {
             </ProtectedRoute>
           }
         >
+          {/* 🔥 ORDEM CORRETA PARA UMA GRÁFICA */}
           <Route path="/" element={<DashboardPage />} />
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/products" element={<ProductsPage />} />
-          <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/orders" element={<OrdersPage />} />
           <Route path="/quotes" element={<QuotesPage />} />
+          <Route path="/orders" element={<OrdersPage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/stock" element={<StockItemsPage />} />
           <Route path="/suppliers" element={<SuppliersPage />} />
+          <Route path="/transactions" element={<TransactionsPage />} />
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/transactions" element={<TransactionsPage />} />
-          <Route path="/stock" element={<StockItemsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

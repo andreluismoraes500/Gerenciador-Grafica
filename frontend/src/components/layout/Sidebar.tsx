@@ -3,30 +3,32 @@ import {
   LayoutDashboard,
   Users,
   Package,
-  Palette,
-  ShoppingCart,
   FileText,
+  ShoppingCart,
+  Palette,
+  Box,
   Truck,
+  Wallet,
   CheckSquare,
   Settings,
   ChevronLeft,
-  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 
+// 🔥 ORDEM CORRETA PARA UMA GRÁFICA
 const items = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
   { to: "/clients", icon: Users, label: "Clientes" },
   { to: "/products", icon: Package, label: "Produtos" },
-  { to: "/projects", icon: Palette, label: "Projetos" },
-  { to: "/orders", icon: ShoppingCart, label: "Pedidos" },
   { to: "/quotes", icon: FileText, label: "Orçamentos" },
+  { to: "/orders", icon: ShoppingCart, label: "Pedidos" },
+  { to: "/projects", icon: Palette, label: "Projetos" },
+  { to: "/stock", icon: Box, label: "Insumos" },
   { to: "/suppliers", icon: Truck, label: "Fornecedores" },
+  { to: "/transactions", icon: Wallet, label: "Financeiro" },
   { to: "/tasks", icon: CheckSquare, label: "Tarefas" },
   { to: "/settings", icon: Settings, label: "Configurações" },
-  { to: "/stock", icon: Package, label: "Insumos" }, // Ou Box
-  { to: "/transactions", icon: Wallet, label: "Financeiro" },
 ];
 
 export function Sidebar({

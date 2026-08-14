@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -13,7 +13,6 @@ import {
   CheckCircle,
   FileUp,
   MoreHorizontal,
-  X,
 } from "lucide-react";
 import api from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -21,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
+import { SearchSelect } from "@/components/ui/search-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge, PriorityBadge } from "@/components/ui/badge";
 import {
@@ -37,7 +37,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogClose,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -79,6 +78,7 @@ export function ProjectsPage() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [filesDialogOpen, setFilesDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [clientSearch, setClientSearch] = useState("");
 
   // Queries para dados
   const { data, isLoading } = useQuery({
@@ -94,9 +94,18 @@ export function ProjectsPage() {
         .then((r) => r.data),
   });
 
-  const { data: clients } = useQuery({
-    queryKey: ["clients-select"],
-    queryFn: () => api.get("/clients?limit=100").then((r) => r.data.data),
+  // Busca clientes com suporte a busca
+  const { data: clients, isLoading: clientsLoading } = useQuery({
+    queryKey: ["clients-select", clientSearch],
+    queryFn: () =>
+      api
+        .get("/clients", {
+          params: {
+            limit: 50,
+            search: clientSearch || undefined,
+          },
+        })
+        .then((r) => r.data.data || []),
   });
 
   const { data: users } = useQuery({
@@ -116,6 +125,13 @@ export function ProjectsPage() {
     resolver: zodResolver(projectSchema),
     defaultValues,
   });
+
+  // Observa o valor do cliente para exibir no campo
+  const clientIdValue = watch("clientId");
+  const selectedClient = useMemo(() => {
+    if (!clients) return null;
+    return clients.find((c: any) => c.id === clientIdValue);
+  }, [clients, clientIdValue]);
 
   // Mutations
   const createProjectMut = useMutation({
@@ -433,7 +449,7 @@ export function ProjectsPage() {
         </Table>
       </div>
 
-      {/* Dialog de Criação de Projeto */}
+      {/* Dialog de Criação de Projeto com SearchSelect */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -456,23 +472,34 @@ export function ProjectsPage() {
                 )}
               </div>
 
-              {/* Cliente */}
+              {/* Cliente - AGORA COM SEARCHSELECT */}
               <div className="space-y-2">
                 <Label htmlFor="clientId">Cliente *</Label>
-                <Select
-                  id="clientId"
-                  placeholder="Selecione um cliente..."
+                <SearchSelect
+                  value={clientIdValue}
+                  onChange={(value) => setValue("clientId", value)}
                   options={
                     clients?.map((c: any) => ({
                       value: c.id,
                       label: c.name,
+                      subLabel: c.document
+                        ? `CPF/CNPJ: ${c.document}`
+                        : c.email || "",
                     })) || []
                   }
-                  {...register("clientId")}
+                  placeholder="Buscar cliente por nome ou documento..."
+                  isLoading={clientsLoading}
                 />
                 {errors.clientId && (
                   <p className="text-xs text-destructive">
                     {errors.clientId.message}
+                  </p>
+                )}
+                {selectedClient && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Selecionado:{" "}
+                    <span className="font-medium">{selectedClient.name}</span>
+                    {selectedClient.document && ` • ${selectedClient.document}`}
                   </p>
                 )}
               </div>
