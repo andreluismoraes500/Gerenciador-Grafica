@@ -104,32 +104,57 @@ export const productsService = {
     return prisma.category.create({ data: { name, slug, description, parentId } });
   },
 
-  async getLowStock() {
-    const products = await prisma.product.findMany({ where: { isActive: true } });
-    return products.filter(p => p.stock <= p.minStock);
+  async updateStock(id: string, quantity: number) {
+    const product = await prisma.product.findUnique({ where: { id } });
+    if (!product) throw new AppError('Produto não encontrado', 404);
+
+    const newStock = product.stock + quantity;
+    if (newStock < 0) throw new AppError('Estoque insuficiente', 400);
+
+    const updated = await prisma.product.update({
+      where: { id },
+      data: { stock: newStock }
+    });
+
+    // Notifica se estoque ficou baixo
+    if (updated.stock <= updated.minStock) {
+      await this.checkAndNotifyLowStock(id);
+    }
+
+    return updated;
   },
 
-   async checkAndNotifyLowStock(productId: string) {
-    const product = await prisma.product.findUnique({ where: { id: productId } });
+  /**
+   * Busca produtos com estoque baixo
+   */
+  async getLowStock() {
+    return prisma.product.findMany({
+      where: {
+        isActive: true,
+        stock: { lte: prisma.product.fields.minStock }
+      },
+      include: { category: true }
+    });
+  },
+
+  /**
+   * Verifica e notifica sobre estoque baixo
+   */
+  async checkAndNotifyLowStock(productId: string) {
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, name: true, sku: true, stock: true, minStock: true }
+    });
+
     if (!product) return;
 
     if (product.stock <= product.minStock) {
       await notificationsService.notifyTeam('', {
-        title: '⚠️ Estoque baixo',
-        message: `Produto "${product.name}" (${product.sku}) tem apenas ${product.stock} unidades em estoque (mínimo: ${product.minStock}).`,
+        title: '⚠️ Estoque Baixo',
+        message: `Produto "${product.name}" (${product.sku}) está com apenas ${product.stock} unidades. Mínimo: ${product.minStock}`,
         type: 'WARNING',
-        metadata: { entity: 'Product', entityId: product.id, route: '/products' },
+        metadata: { entity: 'Product', entityId: product.id, route: '/products' }
       });
     }
-  },
-
-  async updateStock(id: string, quantity: number) {
-    const existing = await prisma.product.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Product not found', 404);
-
-    const newStock = existing.stock + quantity;
-    if (newStock < 0) throw new AppError('Insufficient stock', 400);
-
-    return prisma.product.update({ where: { id }, data: { stock: newStock } });
-  },
+  }
 };

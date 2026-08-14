@@ -12,6 +12,12 @@ export const notificationsService = {
     });
   },
 
+  async getUnreadCount(userId: string) {
+    return prisma.notification.count({
+      where: { userId, isRead: false }
+    });
+  },
+
   async markAsRead(id: string, userId: string) {
     const notification = await prisma.notification.findFirst({
       where: { id, userId }
@@ -23,6 +29,13 @@ export const notificationsService = {
     
     return prisma.notification.update({
       where: { id },
+      data: { isRead: true }
+    });
+  },
+
+  async markAllAsRead(userId: string) {
+    return prisma.notification.updateMany({
+      where: { userId, isRead: false },
       data: { isRead: true }
     });
   },
@@ -66,7 +79,7 @@ export const notificationsService = {
     });
   },
 
-  // Cria notificação para múltiplos usuários (ex: todos os admins)
+  // Cria notificação para múltiplos usuários
   async createForMany(
     userIds: string[],
     data: {
@@ -76,10 +89,13 @@ export const notificationsService = {
       metadata?: any;
     }
   ) {
-    if (userIds.length === 0) return;
+    if (userIds.length === 0) return [];
     
-    await prisma.notification.createMany({
-      data: userIds.map(userId => ({
+    // Evita criar notificações duplicadas para o mesmo usuário
+    const uniqueUserIds = [...new Set(userIds)];
+    
+    return prisma.notification.createMany({
+      data: uniqueUserIds.map(userId => ({
         userId,
         title: data.title,
         message: data.message,
@@ -89,7 +105,7 @@ export const notificationsService = {
     });
   },
 
-  // Helper: busca todos os admins e atendentes (equipe interna)
+  // Busca todos os IDs de usuários da equipe
   async getTeamUserIds(excludeUserId?: string): Promise<string[]> {
     const users = await prisma.user.findMany({
       where: {
@@ -102,7 +118,7 @@ export const notificationsService = {
     return users.map(u => u.id);
   },
 
-  // Helper: notifica a equipe toda (exceto quem fez a ação)
+  // Notifica toda a equipe
   async notifyTeam(
     actorUserId: string,
     data: {
@@ -113,6 +129,17 @@ export const notificationsService = {
     }
   ) {
     const teamIds = await this.getTeamUserIds(actorUserId);
-    await this.createForMany(teamIds, data);
+    return this.createForMany(teamIds, data);
   },
+
+  // Notifica sobre baixo estoque
+  async notifyLowStock(productName: string, sku: string, stock: number, minStock: number) {
+    const teamIds = await this.getTeamUserIds();
+    return this.createForMany(teamIds, {
+      title: '⚠️ Estoque Baixo',
+      message: `Produto "${productName}" (${sku}) está com apenas ${stock} unidades. Mínimo: ${minStock}`,
+      type: 'WARNING',
+      metadata: { entity: 'Product', route: '/products' }
+    });
+  }
 };

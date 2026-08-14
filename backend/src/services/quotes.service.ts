@@ -81,12 +81,6 @@ export const quotesService = {
     await prisma.quote.delete({ where: { id } });
   },
 
-  async updateStatus(id: string, status: string) {
-    const existing = await prisma.quote.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Quote not found', 404);
-    return prisma.quote.update({ where: { id }, data: { status: status as any } });
-  },
-
   async generatePDF(id: string) {
     return generateQuotePDF(id);
   },
@@ -152,4 +146,48 @@ export const quotesService = {
 
     return order;
   },
+
+  async updateStatus(id: string, status: string) {
+  const quote = await prisma.quote.findUnique({ 
+    where: { id },
+    include: { client: true }
+  });
+  
+  if (!quote) throw new AppError('Orçamento não encontrado', 404);
+
+  // Valida transições de status
+  const validTransitions: Record<string, string[]> = {
+    'DRAFT': ['SENT', 'APPROVED', 'REJECTED', 'EXPIRED', 'CONVERTED'],
+    'SENT': ['APPROVED', 'REJECTED', 'EXPIRED', 'CONVERTED'],
+    'APPROVED': ['CONVERTED', 'EXPIRED'],
+    'REJECTED': [],
+    'EXPIRED': ['CONVERTED'],
+    'CONVERTED': []
+  };
+
+  if (!validTransitions[quote.status]?.includes(status)) {
+    throw new AppError(`Transição inválida: ${quote.status} -> ${status}`, 400);
+  }
+
+  // Se for CONVERTED, verifica se há pedido vinculado
+  if (status === 'CONVERTED' && !quote.orderId) {
+    throw new AppError('Não é possível converter para CONVERTED sem um pedido vinculado', 400);
+  }
+
+  return prisma.quote.update({
+    where: { id },
+    data: { status: status as any },
+    include: { client: true }
+  });
+},
+
+/**
+ * Gera número sequencial para orçamento
+ */
+async generateQuoteNumber() {
+  const count = await prisma.quote.count();
+  const settings = await prisma.companySettings.findFirst();
+  const prefix = settings?.quotePrefix || 'ORC';
+  return `${prefix}-${String(count + 1).padStart(6, '0')}`;
+}
 };
