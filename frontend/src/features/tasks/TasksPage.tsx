@@ -1,3 +1,4 @@
+// frontend/src/features/tasks/TasksPage.tsx
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -19,13 +20,129 @@ import { LayoutGrid, List } from "lucide-react";
 import api from "@/api/client";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { formatDate, getStatusLabel, getPriorityLabel } from "@/lib/utils";
 
+// ✅ Configuração COMPLETA para o modo lista
 const config: CrudConfig = {
   title: "Tarefas",
-  subtitle: "Gerenciar tarefas",
+  subtitle: "Gerenciar tarefas da equipe",
   endpoint: "/tasks",
-  columns: [],
-  fields: [],
+  columns: [
+    {
+      key: "title",
+      header: "Tarefa",
+      render: (r) => (
+        <div>
+          <p className="font-medium">{r.title}</p>
+          {r.description && (
+            <p className="text-xs text-muted-foreground line-clamp-1">
+              {r.description}
+            </p>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "project",
+      header: "Projeto",
+      render: (r) => r.project?.title || "—",
+    },
+    {
+      key: "assignee",
+      header: "Responsável",
+      render: (r) => r.assignee?.name || "—",
+    },
+    {
+      key: "priority",
+      header: "Prioridade",
+      render: (r) => (
+        <Badge
+          variant={
+            r.priority === "URGENT"
+              ? "danger"
+              : r.priority === "HIGH"
+                ? "warning"
+                : r.priority === "NORMAL"
+                  ? "info"
+                  : "outline"
+          }
+        >
+          {getPriorityLabel(r.priority)}
+        </Badge>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (r) => {
+        const statusMap: Record<
+          string,
+          {
+            variant: "default" | "success" | "warning" | "danger" | "outline";
+            label: string;
+          }
+        > = {
+          TODO: { variant: "outline", label: "A Fazer" },
+          IN_PROGRESS: { variant: "warning", label: "Em Progresso" },
+          DONE: { variant: "success", label: "Concluída" },
+          CANCELLED: { variant: "danger", label: "Cancelada" },
+        };
+        const s = statusMap[r.status] || {
+          variant: "outline",
+          label: r.status,
+        };
+        return <Badge variant={s.variant}>{s.label}</Badge>;
+      },
+    },
+    {
+      key: "dueDate",
+      header: "Prazo",
+      render: (r) => (r.dueDate ? formatDate(r.dueDate) : "—"),
+    },
+  ],
+  fields: [
+    { name: "title", label: "Título", required: true, span: 2 },
+    { name: "description", label: "Descrição", type: "textarea", span: 2 },
+    {
+      name: "status",
+      label: "Status",
+      type: "select",
+      options: [
+        { value: "TODO", label: "A Fazer" },
+        { value: "IN_PROGRESS", label: "Em Progresso" },
+        { value: "DONE", label: "Concluída" },
+        { value: "CANCELLED", label: "Cancelada" },
+      ],
+      required: true,
+    },
+    {
+      name: "priority",
+      label: "Prioridade",
+      type: "select",
+      options: [
+        { value: "LOW", label: "Baixa" },
+        { value: "NORMAL", label: "Normal" },
+        { value: "HIGH", label: "Alta" },
+        { value: "URGENT", label: "Urgente" },
+      ],
+      required: true,
+    },
+    {
+      name: "projectId",
+      label: "Projeto",
+      type: "select",
+      optionsUrl: "/projects",
+    },
+    {
+      name: "assigneeId",
+      label: "Responsável",
+      type: "select",
+      optionsUrl: "/settings/users",
+    },
+    { name: "dueDate", label: "Prazo", type: "date" },
+  ],
+  defaultValues: { status: "TODO", priority: "NORMAL" },
 };
 
 const TASK_COLUMNS = [
@@ -88,6 +205,7 @@ export function TasksPage() {
       updateStatusMut.mutate({ id: taskId, status: newStatus });
   };
 
+  // Modo lista - usa o CrudPage com configuração completa
   if (view === "list") {
     return (
       <div className="space-y-4">
@@ -101,6 +219,7 @@ export function TasksPage() {
     );
   }
 
+  // Modo Kanban
   if (isLoading) return <Skeleton className="h-[600px]" />;
 
   return (

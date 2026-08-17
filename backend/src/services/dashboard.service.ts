@@ -1,3 +1,4 @@
+// backend/src/services/dashboard.service.ts
 import { prisma } from '../config/database';
 import { startOfMonth, subDays, subMonths } from 'date-fns';
 
@@ -36,19 +37,39 @@ export const dashboardService = {
     };
   },
 
+  // ✅ CORREÇÃO: Retornar dados no formato correto
   async getMonthlyRevenue(months = 12) {
-    const results = await prisma.$queryRawUnsafe(`
-      SELECT DATE_TRUNC('month', "createdAt") as month,
-             COALESCE(SUM(total), 0)::float as total,
-             COUNT(*)::int as orders
-      FROM "Order"
-      WHERE "paymentStatus" = 'PAID' AND "createdAt" >= NOW() - INTERVAL '${months} months'
-      GROUP BY month ORDER BY month;
-    `);
-    return results;
-},
+    try {
+      // Query SQL que retorna dados agregados por mês
+      const results = await prisma.$queryRawUnsafe(`
+        SELECT 
+          DATE_TRUNC('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo') as month,
+          COALESCE(SUM(total), 0)::float as total,
+          COUNT(*)::int as orders
+        FROM "Order"
+        WHERE "paymentStatus" = 'PAID' 
+          AND "createdAt" >= NOW() - INTERVAL '${months} months'
+        GROUP BY DATE_TRUNC('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')
+        ORDER BY month ASC;
+      `);
+      
+      // ✅ Converter para array de objetos com formato consistente
+      return (results as any[]).map((item: any) => {
+        // Garantir que a data seja um objeto Date
+        const date = item.month instanceof Date ? item.month : new Date(item.month);
+        return {
+          month: date, // Retorna o objeto Date
+          total: Number(item.total) || 0,
+          orders: Number(item.orders) || 0
+        };
+      });
+    } catch (error) {
+      console.error('[Dashboard] Erro no getMonthlyRevenue:', error);
+      return [];
+    }
+  },
 
-   async getTopProducts(limit = 10, days = 30) {
+  async getTopProducts(limit = 10, days = 30) {
     const since = subDays(new Date(), days);
 
     const grouped = await prisma.orderItem.groupBy({
@@ -65,7 +86,6 @@ export const dashboardService = {
       take: limit
     });
 
-    // Busca os produtos para incluir nome/sku
     const productIds = grouped.map(g => g.productId);
     const products = await prisma.product.findMany({
       where: { id: { in: productIds } },
@@ -83,7 +103,12 @@ export const dashboardService = {
   },
 
   async getStatusDistribution() {
-    return prisma.order.groupBy({ by: ['status'], _count: true });
+    const results = await prisma.order.groupBy({ 
+      by: ['status'], 
+      _count: true 
+    });
+    
+    return results.sort((a, b) => a.status.localeCompare(b.status));
   },
 
   async getRecentActivities(limit = 20) {
@@ -98,126 +123,127 @@ export const dashboardService = {
     const now = new Date();
     const limitDate = new Date(now.getTime() + days * 86400000);
     return prisma.order.findMany({
-      where: { dueDate: { gte: now, lte: limitDate }, status: { notIn: ['DELIVERED', 'CANCELLED'] } },
+      where: { 
+        dueDate: { gte: now, lte: limitDate }, 
+        status: { notIn: ['DELIVERED', 'CANCELLED'] } 
+      },
       include: { client: true },
       orderBy: { dueDate: 'asc' },
     });
   },
 
   async getLowStockAlerts() {
-    const products = await prisma.product.findMany({ where: { isActive: true } });
+    const products = await prisma.product.findMany({ 
+      where: { isActive: true } 
+    });
     return products.filter(p => p.stock <= p.minStock);
   },
 
   async getAdvancedMetrics() {
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
 
-  const [
-    totalOrders,
-    totalRevenue,
-    monthRevenue,
-    yearRevenue,
-    activeProjects,
-    pendingTasks,
-    totalClients,
-    lowStockCount
-  ] = await Promise.all([
-    prisma.order.count(),
-    prisma.order.aggregate({
-      where: { paymentStatus: 'PAID' },
-      _sum: { total: true }
-    }),
-    prisma.order.aggregate({
-      where: { 
-        createdAt: { gte: startOfMonth },
-        paymentStatus: 'PAID' 
+    const [
+      totalOrders,
+      totalRevenue,
+      monthRevenue,
+      yearRevenue,
+      activeProjects,
+      pendingTasks,
+      totalClients,
+      lowStockCount
+    ] = await Promise.all([
+      prisma.order.count(),
+      prisma.order.aggregate({
+        where: { paymentStatus: 'PAID' },
+        _sum: { total: true }
+      }),
+      prisma.order.aggregate({
+        where: { 
+          createdAt: { gte: startOfMonth },
+          paymentStatus: 'PAID' 
+        },
+        _sum: { total: true }
+      }),
+      prisma.order.aggregate({
+        where: { 
+          createdAt: { gte: startOfYear },
+          paymentStatus: 'PAID' 
+        },
+        _sum: { total: true }
+      }),
+      prisma.project.count({
+        where: { 
+          status: { in: ['CREATING', 'AWAITING_APPROVAL', 'PRODUCTION'] }
+        }
+      }),
+      prisma.task.count({
+        where: { 
+          status: { in: ['TODO', 'IN_PROGRESS'] }
+        }
+      }),
+      prisma.client.count(),
+      prisma.product.count({
+        where: {
+          isActive: true,
+          stock: { lte: prisma.product.fields.minStock }
+        }
+      })
+    ]);
+
+    return {
+      orders: {
+        total: totalOrders,
+        month: monthRevenue._sum.total || 0,
+        year: yearRevenue._sum.total || 0,
+        totalRevenue: totalRevenue._sum.total || 0,
       },
-      _sum: { total: true }
-    }),
-    prisma.order.aggregate({
-      where: { 
-        createdAt: { gte: startOfYear },
-        paymentStatus: 'PAID' 
+      projects: {
+        active: activeProjects,
       },
-      _sum: { total: true }
-    }),
-    prisma.project.count({
-      where: { 
-        status: { in: ['CREATING', 'AWAITING_APPROVAL', 'PRODUCTION'] }
+      tasks: {
+        pending: pendingTasks,
+      },
+      clients: {
+        total: totalClients,
+      },
+      stock: {
+        lowStock: lowStockCount,
+      },
+      growth: {
+        monthly: await this.getMonthlyGrowth(),
       }
-    }),
-    prisma.task.count({
-      where: { 
-        status: { in: ['TODO', 'IN_PROGRESS'] }
-      }
-    }),
-    prisma.client.count(),
-    prisma.product.count({
-      where: {
-        isActive: true,
-        stock: { lte: prisma.product.fields.minStock }
-      }
-    })
-  ]);
+    };
+  },
 
-  return {
-    orders: {
-      total: totalOrders,
-      month: monthRevenue._sum.total || 0,
-      year: yearRevenue._sum.total || 0,
-      totalRevenue: totalRevenue._sum.total || 0,
-    },
-    projects: {
-      active: activeProjects,
-    },
-    tasks: {
-      pending: pendingTasks,
-    },
-    clients: {
-      total: totalClients,
-    },
-    stock: {
-      lowStock: lowStockCount,
-    },
-    growth: {
-      monthly: await this.getMonthlyGrowth(),
-    }
-  };
-},
+  async getMonthlyGrowth() {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
 
-/**
- * Calcula crescimento mensal
- */
-async getMonthlyGrowth() {
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    const [currentMonth, lastMonth] = await Promise.all([
+      prisma.order.aggregate({
+        where: { 
+          createdAt: { gte: startOfMonth },
+          paymentStatus: 'PAID' 
+        },
+        _sum: { total: true }
+      }),
+      prisma.order.aggregate({
+        where: { 
+          createdAt: { gte: startOfLastMonth, lte: endOfLastMonth },
+          paymentStatus: 'PAID' 
+        },
+        _sum: { total: true }
+      })
+    ]);
 
-  const [currentMonth, lastMonth] = await Promise.all([
-    prisma.order.aggregate({
-      where: { 
-        createdAt: { gte: startOfMonth },
-        paymentStatus: 'PAID' 
-      },
-      _sum: { total: true }
-    }),
-    prisma.order.aggregate({
-      where: { 
-        createdAt: { gte: startOfLastMonth, lte: endOfLastMonth },
-        paymentStatus: 'PAID' 
-      },
-      _sum: { total: true }
-    })
-  ]);
+    const current = currentMonth._sum.total || 0;
+    const previous = lastMonth._sum.total || 0;
 
-  const current = currentMonth._sum.total || 0;
-  const previous = lastMonth._sum.total || 0;
-
-  if (previous === 0) return current > 0 ? 100 : 0;
-  return ((current - previous) / previous) * 100;
-}
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return ((current - previous) / previous) * 100;
+  }
 };
-

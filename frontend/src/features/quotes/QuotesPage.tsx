@@ -1,7 +1,8 @@
-import { useState } from "react";
+// frontend/src/features/quotes/QuotesPage.tsx
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, FileDown, RefreshCw, Inbox } from "lucide-react";
+import { Plus, FileDown, RefreshCw, Inbox, Search } from "lucide-react";
 import api from "@/api/client";
 import { useList } from "@/components/crud/CrudPage";
 import { ItemsEditor, ItemRow } from "@/components/crud/ItemsEditor";
@@ -26,6 +27,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  SearchSelect,
+  SearchSelectOption,
+} from "@/components/ui/search-select";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export function QuotesPage() {
@@ -35,12 +40,39 @@ export function QuotesPage() {
   const [validUntil, setValidUntil] = useState("");
   const [items, setItems] = useState<ItemRow[]>([]);
 
+  // Estado para busca de clientes no SearchSelect
+  const [clientSearch, setClientSearch] = useState("");
+
   const { data, isLoading } = useQuery({
     queryKey: ["quotes"],
     queryFn: () =>
       api.get("/quotes", { params: { limit: 50 } }).then((r) => r.data),
   });
-  const clients = useList("/clients");
+
+  // Busca clientes com suporte a busca textual
+  const { data: clients, isLoading: clientsLoading } = useQuery({
+    queryKey: ["clients-select", clientSearch],
+    queryFn: () =>
+      api
+        .get("/clients", {
+          params: {
+            limit: 50,
+            search: clientSearch || undefined,
+          },
+        })
+        .then((r) => r.data.data || []),
+  });
+
+  // Converte clientes para o formato do SearchSelect
+  const clientOptions: SearchSelectOption[] = useMemo(() => {
+    if (!clients) return [];
+    return clients.map((c: any) => ({
+      value: c.id,
+      label: c.name,
+      subLabel: c.document ? `CPF/CNPJ: ${c.document}` : c.email || "",
+    }));
+  }, [clients]);
+
   const products = useList("/products?limit=200");
 
   const createMut = useMutation({
@@ -53,6 +85,7 @@ export function QuotesPage() {
     onError: (e: any) =>
       toast.error(e?.response?.data?.error || "Erro ao criar orçamento."),
   });
+
   const convertMut = useMutation({
     mutationFn: (id: string) =>
       api.post(`/quotes/${id}/convert-to-order`, { paymentMethod: "PIX" }),
@@ -63,6 +96,7 @@ export function QuotesPage() {
     onError: (e: any) =>
       toast.error(e?.response?.data?.error || "Erro ao converter."),
   });
+
   const statusMut = useMutation({
     mutationFn: ({ id, status }: any) =>
       api.patch(`/quotes/${id}/status`, { status }),
@@ -73,12 +107,15 @@ export function QuotesPage() {
     const res = await api.get(`/quotes/${id}/pdf`, { responseType: "blob" });
     window.open(URL.createObjectURL(res.data), "_blank");
   };
+
   const reset = () => {
     setOpen(false);
     setClientId("");
     setItems([]);
     setValidUntil("");
+    setClientSearch("");
   };
+
   const submit = () =>
     createMut.mutate({
       clientId,
@@ -91,6 +128,12 @@ export function QuotesPage() {
         unitPrice: i.unitPrice,
       })),
     });
+
+  // Busca o cliente selecionado para exibir informações adicionais
+  const selectedClient = useMemo(() => {
+    if (!clients) return null;
+    return clients.find((c: any) => c.id === clientId);
+  }, [clients, clientId]);
 
   return (
     <div className="space-y-6">
@@ -205,6 +248,7 @@ export function QuotesPage() {
         </Table>
       </div>
 
+      {/* Dialog de criação com SearchSelect */}
       <Dialog open={open} onOpenChange={(v) => !v && reset()}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -212,17 +256,24 @@ export function QuotesPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
+              {/* Cliente - AGORA COM SEARCHSELECT */}
               <div className="space-y-2">
                 <Label>Cliente *</Label>
-                <Select
+                <SearchSelect
                   value={clientId}
-                  placeholder="Selecione..."
-                  options={clients.map((c: any) => ({
-                    value: c.id,
-                    label: c.name,
-                  }))}
-                  onChange={(e) => setClientId(e.target.value)}
+                  onChange={(value) => setClientId(value)}
+                  options={clientOptions}
+                  placeholder="Buscar cliente por nome ou documento..."
+                  isLoading={clientsLoading}
                 />
+                {selectedClient && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Selecionado:{" "}
+                    <span className="font-medium">{selectedClient.name}</span>
+                    {selectedClient.document && ` • ${selectedClient.document}`}
+                    {selectedClient.email && ` • ${selectedClient.email}`}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Válido até</Label>
@@ -254,7 +305,7 @@ export function QuotesPage() {
                 }
                 onClick={submit}
               >
-                Criar Orçamento
+                {createMut.isPending ? "Criando..." : "Criar Orçamento"}
               </Button>
             </DialogFooter>
           </div>

@@ -1,3 +1,4 @@
+// frontend/src/lib/utils.ts
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -47,6 +48,7 @@ export function formatCpfCnpj(value: string): string {
   }
 }
 
+// ✅ TODOS OS STATUS TRADUZIDOS PARA PORTUGUÊS
 export const STATUS_LABELS: Record<string, string> = {
   // Pedidos
   BUDGET: 'Orçamento',

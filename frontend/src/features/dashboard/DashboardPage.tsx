@@ -1,3 +1,4 @@
+// frontend/src/features/dashboard/DashboardPage.tsx
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
@@ -12,9 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RevenueChart } from "./RevenueChart";
 import { StatusPieChart } from "./StatusPieChart";
 import { TopProducts } from "./TopProducts";
-import { ActivityFeed } from "./ActivityFeed";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils"; // ✅ Import correto
+import { cn } from "@/lib/utils";
 import api from "@/api/client";
 
 const fadeUp = {
@@ -39,7 +39,7 @@ export function DashboardPage() {
           bg: "bg-green-50 dark:bg-green-950/30",
         },
         {
-          title: "Pedidos Totais",
+          title: "Total de Pedidos",
           value: data.totalOrders,
           icon: ShoppingCart,
           color: "text-blue-600",
@@ -71,6 +71,7 @@ export function DashboardPage() {
         </p>
       </div>
 
+      {/* Cards de métricas */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {isLoading
           ? Array.from({ length: 4 }).map((_, i) => (
@@ -118,6 +119,7 @@ export function DashboardPage() {
             ))}
       </div>
 
+      {/* Gráficos - 2 colunas */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -137,21 +139,14 @@ export function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Apenas Top Produtos */}
+      <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Produtos Mais Vendidos</CardTitle>
           </CardHeader>
           <CardContent>
             <TopProducts />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Atividades Recentes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ActivityFeed />
           </CardContent>
         </Card>
       </div>

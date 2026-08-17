@@ -1,14 +1,18 @@
-import { useState } from "react";
+// frontend/src/features/orders/OrdersPage.tsx
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Search, Inbox, CheckCircle } from "lucide-react";
+import { Plus, Search, Inbox, CheckCircle, X } from "lucide-react";
 import api from "@/api/client";
-import { useList } from "@/components/crud/CrudPage";
 import { ItemsEditor, ItemRow } from "@/components/crud/ItemsEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import {
+  SearchSelect,
+  SearchSelectOption,
+} from "@/components/ui/search-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/badge";
 import {
@@ -44,6 +48,87 @@ const STATUSES = [
 
 const PAYMENT_STATUSES = ["PENDING", "PAID", "REFUNDED", "CANCELLED"];
 
+// Componente para selecionar produto com busca
+function ProductSearchSelect({
+  value,
+  onChange,
+  onProductSelect,
+  placeholder = "Buscar produto...",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onProductSelect?: (product: any) => void;
+  placeholder?: string;
+}) {
+  const [search, setSearch] = useState("");
+
+  const { data: products, isLoading } = useQuery({
+    queryKey: ["products-select", search],
+    queryFn: () =>
+      api
+        .get("/products", {
+          params: {
+            limit: 50,
+            search: search || undefined,
+          },
+        })
+        .then((r) => r.data.data || []),
+  });
+
+  const options: SearchSelectOption[] = useMemo(() => {
+    if (!products) return [];
+    return products.map((p: any) => ({
+      value: p.id,
+      label: p.name,
+      subLabel: `SKU: ${p.sku} • Estoque: ${p.stock} • R$ ${p.salePrice.toFixed(2)}`,
+    }));
+  }, [products]);
+
+  // Busca o produto selecionado
+  const selectedProduct = useMemo(() => {
+    if (!products) return null;
+    return products.find((p: any) => p.id === value);
+  }, [products, value]);
+
+  return (
+    <div className="space-y-2">
+      <SearchSelect
+        value={value}
+        onChange={(val) => {
+          onChange(val);
+          if (onProductSelect && val) {
+            const product = products?.find((p: any) => p.id === val);
+            if (product) onProductSelect(product);
+          }
+        }}
+        options={options}
+        placeholder={placeholder}
+        isLoading={isLoading}
+      />
+      {selectedProduct && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground p-2 bg-muted/30 rounded">
+          <span>
+            Estoque:{" "}
+            <span className="font-medium">{selectedProduct.stock}</span>
+            {" • "}
+            Preço:{" "}
+            <span className="font-medium">
+              R$ {selectedProduct.salePrice.toFixed(2)}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function OrdersPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
@@ -52,6 +137,10 @@ export function OrdersPage() {
   const [paymentMethod, setPaymentMethod] = useState("PIX");
   const [dueDate, setDueDate] = useState("");
   const [items, setItems] = useState<ItemRow[]>([]);
+
+  // Estado para busca de clientes no SearchSelect
+  const [clientSearch, setClientSearch] = useState("");
+
   const { data, isLoading } = useQuery({
     queryKey: ["orders", search],
     queryFn: () =>
@@ -59,8 +148,47 @@ export function OrdersPage() {
         .get("/orders", { params: { limit: 50, search: search || undefined } })
         .then((r) => r.data),
   });
-  const clients = useList("/clients");
-  const products = useList("/products?limit=200");
+
+  // Busca clientes com suporte a busca textual
+  const { data: clients, isLoading: clientsLoading } = useQuery({
+    queryKey: ["clients-select", clientSearch],
+    queryFn: () =>
+      api
+        .get("/clients", {
+          params: {
+            limit: 50,
+            search: clientSearch || undefined,
+          },
+        })
+        .then((r) => r.data.data || []),
+  });
+
+  // Converte clientes para o formato do SearchSelect
+  const clientOptions: SearchSelectOption[] = useMemo(() => {
+    if (!clients) return [];
+    return clients.map((c: any) => ({
+      value: c.id,
+      label: c.name,
+      subLabel: c.document ? `CPF/CNPJ: ${c.document}` : c.email || "",
+    }));
+  }, [clients]);
+
+  // Busca o cliente selecionado para exibir informações adicionais
+  const selectedClient = useMemo(() => {
+    if (!clients) return null;
+    return clients.find((c: any) => c.id === clientId);
+  }, [clients, clientId]);
+
+  // Busca produtos para o ItemsEditor
+  const { data: products, isLoading: productsLoading } = useQuery({
+    queryKey: ["products-list"],
+    queryFn: () =>
+      api
+        .get("/products", {
+          params: { limit: 200 },
+        })
+        .then((r) => r.data.data || []),
+  });
 
   const statusMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
@@ -95,8 +223,10 @@ export function OrdersPage() {
       qc.invalidateQueries({ queryKey: ["orders"] });
       resetForm();
     },
-    onError: (e: any) =>
-      toast.error(e?.response?.data?.error || "Erro ao criar pedido."),
+    onError: (e: any) => {
+      const msg = e?.response?.data?.error || "Erro ao criar pedido.";
+      toast.error(msg);
+    },
   });
 
   const resetForm = () => {
@@ -105,6 +235,7 @@ export function OrdersPage() {
     setItems([]);
     setDueDate("");
     setPaymentMethod("PIX");
+    setClientSearch("");
   };
 
   const submit = () =>
@@ -120,6 +251,25 @@ export function OrdersPage() {
         unitPrice: i.unitPrice,
       })),
     });
+
+  // Função para adicionar item com produto selecionado via SearchSelect
+  const handleAddProduct = (product: any) => {
+    // Verifica se o produto já está na lista
+    const existing = items.find((i) => i.productId === product.id);
+    if (existing) {
+      toast.info("Produto já adicionado. Aumente a quantidade.");
+      return;
+    }
+
+    setItems([
+      ...items,
+      {
+        productId: product.id,
+        quantity: 1,
+        unitPrice: product.salePrice,
+      },
+    ]);
+  };
 
   return (
     <div className="space-y-6">
@@ -253,24 +403,32 @@ export function OrdersPage() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Dialog de criação com SearchSelect para cliente e produto */}
       <Dialog open={open} onOpenChange={(v) => !v && resetForm()}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Novo Pedido</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-3">
+              {/* Cliente - COM SEARCHSELECT */}
               <div className="space-y-2">
                 <Label>Cliente *</Label>
-                <Select
+                <SearchSelect
                   value={clientId}
-                  placeholder="Selecione..."
-                  options={clients.map((c: any) => ({
-                    value: c.id,
-                    label: c.name,
-                  }))}
-                  onChange={(e) => setClientId(e.target.value)}
+                  onChange={(value) => setClientId(value)}
+                  options={clientOptions}
+                  placeholder="Buscar cliente por nome ou documento..."
+                  isLoading={clientsLoading}
                 />
+                {selectedClient && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Selecionado:{" "}
+                    <span className="font-medium">{selectedClient.name}</span>
+                    {selectedClient.document && ` • ${selectedClient.document}`}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Pagamento</Label>
@@ -294,13 +452,32 @@ export function OrdersPage() {
                 />
               </div>
             </div>
+
+            {/* Busca de Produtos com SearchSelect */}
+            <div className="space-y-2">
+              <Label>Buscar Produto</Label>
+              <ProductSearchSelect
+                value=""
+                onChange={() => {}}
+                onProductSelect={handleAddProduct}
+                placeholder="Digite para buscar produtos por nome ou SKU..."
+              />
+              <p className="text-xs text-muted-foreground">
+                Selecione um produto para adicionar ao pedido
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label>Itens do pedido *</Label>
-              <ItemsEditor
-                items={items}
-                onChange={setItems}
-                products={products}
-              />
+              {productsLoading ? (
+                <Skeleton className="h-32" />
+              ) : (
+                <ItemsEditor
+                  items={items}
+                  onChange={setItems}
+                  products={products || []}
+                />
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={resetForm}>

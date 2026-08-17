@@ -29,6 +29,11 @@ import { errorHandler } from './middlewares/errorHandler';
 import { authMiddleware } from './middlewares/auth';
 import { setupSocket } from './config/socket';
 
+import 'dotenv/config';
+
+
+process.env.TZ = 'America/Sao_Paulo';
+
 // BigInt para JSON
 (BigInt.prototype as any).toJSON = function () {
   return Number(this);
@@ -83,14 +88,15 @@ app.use('/uploads', express.static(uploadDir, {
 }));
 
 // 🔧 ROTA ESPECÍFICA PARA DOWNLOAD DE ARQUIVOS
-app.get('/api/files/download/:filename', (req, res) => {
+app.get('/api/files/download/:filename', (req, res): void => {
   try {
     const filename = req.params.filename;
     const filePath = path.join(uploadDir, filename);
     
     // Verifica se o arquivo existe
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Arquivo não encontrado' });
+      res.status(404).json({ error: 'Arquivo não encontrado' });
+      return;
     }
     
     // Configura cabeçalhos para download
