@@ -1,3 +1,4 @@
+// backend/src/controllers/quotes.controller.ts
 import { Response, NextFunction } from 'express';
 import { quotesService } from '../services/quotes.service';
 import { notificationsService } from '../services/notifications.service';
@@ -34,12 +35,20 @@ export const quotesController = {
     } catch (e) { next(e); }
   },
 
+  // ✅ CORREÇÃO: Update com validação correta
   async update(req: AuthRequest, res: Response, next: NextFunction) {
     try {
+      const id = getParamId(req);
       const data = updateQuoteSchema.parse(req.body);
-      const quote = await quotesService.update(getParamId(req), data);
+      const quote = await quotesService.update(id, data);
+      if (quote) {
+        await logActivity(req.user!.id, 'UPDATE_QUOTE', 'Quote', quote.id, { number: quote.number });
+      }
       res.json(quote);
-    } catch (e) { next(e); }
+    } catch (e) { 
+      console.error('[quotes.controller] update error:', e);
+      next(e); 
+    }
   },
 
   async delete(req: AuthRequest, res: Response, next: NextFunction) {
@@ -80,7 +89,6 @@ export const quotesController = {
       const { paymentMethod } = req.body;
       const order = await quotesService.convertToOrder(getParamId(req), req.user!.id, paymentMethod);
 
-      // 🔔 Notificação: avisa equipe que orçamento virou pedido
       await notificationsService.notifyTeam(req.user!.id, {
         title: 'Orçamento convertido em pedido',
         message: `Pedido ${order.code} gerado a partir do orçamento — R$ ${order.total.toFixed(2)}`,
@@ -90,5 +98,5 @@ export const quotesController = {
 
       res.status(201).json(order);
     } catch (e) { next(e); }
-  },
+  }
 };

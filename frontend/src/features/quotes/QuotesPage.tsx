@@ -77,10 +77,12 @@ export function QuotesPage() {
     },
   });
 
+  // ✅ CORREÇÃO: Mutation para atualizar com os dados corretos
   const updateMut = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) =>
-      api.put(`/quotes/${id}`, data),
-    onSuccess: () => {
+    mutationFn: ({ id, data }: { id: string; data: any }) => {
+      return api.put(`/quotes/${id}`, data);
+    },
+    onSuccess: (response) => {
       toast.success("Orçamento atualizado!");
       qc.invalidateQueries({ queryKey: ["quotes"] });
       resetForm();
@@ -146,6 +148,7 @@ export function QuotesPage() {
   };
 
   const openEdit = (quote: any) => {
+    console.log("[openEdit] Editando orçamento:", quote);
     setEditingQuote(quote);
     setClientId(quote.clientId);
     setValidUntil(quote.validUntil ? quote.validUntil.split("T")[0] : "");
@@ -165,6 +168,7 @@ export function QuotesPage() {
     }
   };
 
+  // ✅ CORREÇÃO: Submit com dados completos
   const submit = () => {
     const payload = {
       clientId,
@@ -177,6 +181,8 @@ export function QuotesPage() {
         unitPrice: i.unitPrice,
       })),
     };
+
+    console.log("[submit] Payload:", payload);
 
     if (editingQuote) {
       updateMut.mutate({ id: editingQuote.id, data: payload });
@@ -330,7 +336,6 @@ export function QuotesPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              {/* ✅ Cliente - SEM controle externo */}
               <div className="space-y-2">
                 <Label>Cliente *</Label>
                 <SearchSelect
@@ -351,7 +356,6 @@ export function QuotesPage() {
               </div>
             </div>
 
-            {/* ✅ Itens - com ProductSearchSelect */}
             <div className="space-y-2">
               <Label>Itens *</Label>
               <ItemsEditor items={items} onChange={setItems} />

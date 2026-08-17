@@ -2,7 +2,24 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Search, Inbox, CheckCircle } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Inbox,
+  CheckCircle,
+  Eye,
+  X,
+  User,
+  Calendar,
+  CreditCard,
+  Package,
+  DollarSign,
+  Clock,
+  Truck,
+  Phone,
+  Mail,
+  MapPin,
+} from "lucide-react";
 import api from "@/api/client";
 import { ItemsEditor, ItemRow } from "@/components/crud/ItemsEditor";
 import { Button } from "@/components/ui/button";
@@ -30,7 +47,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatCurrency, formatDate, getStatusLabel } from "@/lib/utils";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  formatCurrency,
+  formatDate,
+  formatDateTime,
+  getStatusLabel,
+  getPaymentMethodLabel,
+} from "@/lib/utils";
 
 const STATUSES = [
   "BUDGET",
@@ -43,10 +67,313 @@ const STATUSES = [
 
 const PAYMENT_STATUSES = ["PENDING", "PAID", "REFUNDED", "CANCELLED"];
 
+// 🔍 Componente de Detalhes do Pedido
+function OrderDetailsDialog({
+  orderId,
+  open,
+  onClose,
+}: {
+  orderId: string | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { data: order, isLoading } = useQuery({
+    queryKey: ["order-details", orderId],
+    queryFn: () => api.get(`/orders/${orderId}`).then((r) => r.data),
+    enabled: !!orderId && open,
+  });
+
+  if (!open) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center justify-between">
+            <span>Detalhes do Pedido</span>
+            {order && (
+              <span className="text-sm font-mono text-muted-foreground">
+                {order.code}
+              </span>
+            )}
+          </DialogTitle>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-48 w-full" />
+          </div>
+        ) : order ? (
+          <div className="space-y-6">
+            {/* Status e informações gerais */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-muted/30 p-3 rounded-lg">
+                <p className="text-xs text-muted-foreground">Status</p>
+                <StatusBadge status={order.status} />
+              </div>
+              <div className="bg-muted/30 p-3 rounded-lg">
+                <p className="text-xs text-muted-foreground">Pagamento</p>
+                <StatusBadge status={order.paymentStatus} />
+              </div>
+              <div className="bg-muted/30 p-3 rounded-lg">
+                <p className="text-xs text-muted-foreground">Total</p>
+                <p className="text-lg font-bold">
+                  {formatCurrency(order.total)}
+                </p>
+              </div>
+              <div className="bg-muted/30 p-3 rounded-lg">
+                <p className="text-xs text-muted-foreground">Data</p>
+                <p className="text-sm font-medium">
+                  {formatDate(order.createdAt)}
+                </p>
+              </div>
+            </div>
+
+            {/* ✅ Cliente - COM TELEFONE E EMAIL */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Cliente
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div>
+                  <p className="font-medium text-base">{order.client?.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {order.client?.document || "Sem documento"}
+                  </p>
+                </div>
+
+                {/* ✅ Email do cliente */}
+                {order.client?.email && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <a
+                      href={`mailto:${order.client.email}`}
+                      className="text-primary hover:underline"
+                    >
+                      {order.client.email}
+                    </a>
+                  </div>
+                )}
+
+                {/* ✅ Telefone do cliente */}
+                {(order.client?.phone || order.client?.mobile) && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <span>
+                      {order.client?.phone && (
+                        <a
+                          href={`tel:${order.client.phone}`}
+                          className="text-primary hover:underline"
+                        >
+                          {order.client.phone}
+                        </a>
+                      )}
+                      {order.client?.phone && order.client?.mobile && " • "}
+                      {order.client?.mobile && (
+                        <a
+                          href={`tel:${order.client.mobile}`}
+                          className="text-primary hover:underline"
+                        >
+                          {order.client.mobile}
+                        </a>
+                      )}
+                    </span>
+                  </div>
+                )}
+
+                {/* ✅ Endereço do cliente (se tiver) */}
+                {order.client?.address && (
+                  <div className="flex items-start gap-2 text-sm text-muted-foreground mt-1">
+                    <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <span>
+                      {order.client.address.street},{" "}
+                      {order.client.address.number}
+                      {order.client.address.complement &&
+                        ` - ${order.client.address.complement}`}
+                      <br />
+                      {order.client.address.district} -{" "}
+                      {order.client.address.city}/{order.client.address.state}
+                      <br />
+                      CEP: {order.client.address.zipCode}
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Itens do Pedido */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Package className="h-4 w-4" />
+                  Itens do Pedido
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Produto</TableHead>
+                      <TableHead className="text-center">Qtd</TableHead>
+                      <TableHead className="text-right">Preço</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {order.items?.map((item: any) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{item.product?.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              SKU: {item.product?.sku}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {item.quantity}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatCurrency(item.unitPrice)}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                          {formatCurrency(item.totalPrice)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <div className="flex justify-end mt-4 space-x-6 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Subtotal:</span>
+                    <span className="ml-2 font-medium">
+                      {formatCurrency(order.subtotal)}
+                    </span>
+                  </div>
+                  {order.discount > 0 && (
+                    <div>
+                      <span className="text-muted-foreground">Desconto:</span>
+                      <span className="ml-2 font-medium text-red-500">
+                        -{formatCurrency(order.discount)}
+                      </span>
+                    </div>
+                  )}
+                  {order.shippingCost > 0 && (
+                    <div>
+                      <span className="text-muted-foreground">Frete:</span>
+                      <span className="ml-2 font-medium">
+                        {formatCurrency(order.shippingCost)}
+                      </span>
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-muted-foreground font-bold">
+                      Total:
+                    </span>
+                    <span className="ml-2 font-bold text-primary">
+                      {formatCurrency(order.total)}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Pagamento e Entrega */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <CreditCard className="h-4 w-4" />
+                    Pagamento
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="font-medium">
+                    {getPaymentMethodLabel(order.paymentMethod)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Status: {getStatusLabel(order.paymentStatus)}
+                  </p>
+                  {order.paidAt && (
+                    <p className="text-sm text-muted-foreground">
+                      Pago em: {formatDateTime(order.paidAt)}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Truck className="h-4 w-4" />
+                    Entrega
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {order.shippingAddress ? (
+                    <>
+                      <p className="font-medium">Endereço</p>
+                      <p className="text-sm text-muted-foreground">
+                        {order.shippingAddress}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Sem endereço informado
+                    </p>
+                  )}
+                  {order.trackingCode && (
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Código de rastreio: {order.trackingCode}
+                    </p>
+                  )}
+                  {order.dueDate && (
+                    <p className="text-sm text-muted-foreground">
+                      Previsão: {formatDate(order.dueDate)}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Observações */}
+            {order.notes && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Observações</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">{order.notes}</p>
+                </CardContent>
+              </Card>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={onClose}>
+                Fechar
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            Pedido não encontrado
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function OrdersPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [clientId, setClientId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("PIX");
   const [dueDate, setDueDate] = useState("");
@@ -78,6 +405,16 @@ export function OrdersPage() {
       subLabel: c.document ? `CPF/CNPJ: ${c.document}` : c.email || "",
     }));
   }, [clients]);
+
+  const { data: products, isLoading: productsLoading } = useQuery({
+    queryKey: ["products-list"],
+    queryFn: () =>
+      api
+        .get("/products", {
+          params: { limit: 200 },
+        })
+        .then((r) => r.data.data || []),
+  });
 
   const statusMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
@@ -140,6 +477,12 @@ export function OrdersPage() {
       })),
     });
 
+  // 🔍 Abrir detalhes do pedido
+  const openDetails = (orderId: string) => {
+    setSelectedOrderId(orderId);
+    setDetailsOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -176,20 +519,21 @@ export function OrdersPage() {
               <TableHead>Data</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Pagamento</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={7}>
                     <Skeleton className="h-8" />
                   </TableCell>
                 </TableRow>
               ))
             ) : (data?.data ?? []).length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6}>
+                <TableCell colSpan={7}>
                   <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
                     <Inbox className="h-10 w-10 opacity-30" />
                     <p className="text-sm">
@@ -267,6 +611,17 @@ export function OrdersPage() {
                       />
                     </div>
                   </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      title="Ver detalhes"
+                      onClick={() => openDetails(o.id)}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -274,6 +629,7 @@ export function OrdersPage() {
         </Table>
       </div>
 
+      {/* Dialog de criação */}
       <Dialog open={open} onOpenChange={(v) => !v && resetForm()}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -281,7 +637,6 @@ export function OrdersPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-3">
-              {/* ✅ Cliente - SEM controle externo, usa busca interna */}
               <div className="space-y-2">
                 <Label>Cliente *</Label>
                 <SearchSelect
@@ -315,12 +670,14 @@ export function OrdersPage() {
               </div>
             </div>
 
-            {/* ✅ Itens - com ProductSearchSelect que usa controle externo */}
             <div className="space-y-2">
               <Label>Itens do pedido *</Label>
-              <ItemsEditor items={items} onChange={setItems} />
+              {productsLoading ? (
+                <Skeleton className="h-32" />
+              ) : (
+                <ItemsEditor items={items} onChange={setItems} />
+              )}
             </div>
-
             <DialogFooter>
               <Button variant="outline" onClick={resetForm}>
                 Cancelar
@@ -340,6 +697,16 @@ export function OrdersPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 🔍 Dialog de Detalhes do Pedido */}
+      <OrderDetailsDialog
+        orderId={selectedOrderId}
+        open={detailsOpen}
+        onClose={() => {
+          setDetailsOpen(false);
+          setSelectedOrderId(null);
+        }}
+      />
     </div>
   );
 }

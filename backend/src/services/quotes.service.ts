@@ -1,3 +1,4 @@
+// backend/src/services/quotes.service.ts
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { generateQuotePDF } from './pdf.service';
@@ -40,7 +41,10 @@ export const quotesService = {
     const client = await prisma.client.findUnique({ where: { id: data.clientId } });
     if (!client) throw new AppError('Client not found', 404);
 
-    const itemsWithTotal = data.items.map((i: any) => ({ ...i, totalPrice: i.quantity * i.unitPrice }));
+    const itemsWithTotal = data.items.map((i: any) => ({ 
+      ...i, 
+      totalPrice: i.quantity * i.unitPrice 
+    }));
     const subtotal = itemsWithTotal.reduce((sum: number, i: any) => sum + i.totalPrice, 0);
     const total = subtotal - (data.discount || 0);
     const number = await generateQuoteNumber();
@@ -60,18 +64,70 @@ export const quotesService = {
     });
   },
 
+  // ✅ CORREÇÃO: Atualizar orçamento com items
   async update(id: string, data: any) {
-    const existing = await prisma.quote.findUnique({ where: { id } });
+    const existing = await prisma.quote.findUnique({ 
+      where: { id },
+      include: { items: true }
+    });
     if (!existing) throw new AppError('Quote not found', 404);
     if (existing.status !== 'DRAFT') throw new AppError('Only draft quotes can be edited', 400);
 
-    return prisma.quote.update({
-      where: { id },
-      data: {
-        notes: data.notes,
-        discount: data.discount,
-        validUntil: data.validUntil ? new Date(data.validUntil) : undefined,
-      },
+    // Calcular subtotal e total com base nos itens
+    let subtotal = 0;
+    let itemsToCreate: any[] = [];
+
+    if (data.items && data.items.length > 0) {
+      // Calcular subtotal dos itens
+      data.items.forEach((item: any) => {
+        const totalPrice = item.quantity * item.unitPrice;
+        subtotal += totalPrice;
+        itemsToCreate.push({
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: totalPrice,
+        });
+      });
+    }
+
+    const total = subtotal - (data.discount || existing.discount || 0);
+
+    // ✅ Usar transação para atualizar orçamento e itens
+    return await prisma.$transaction(async (tx) => {
+      // Atualizar dados principais do orçamento
+      const updatedQuote = await tx.quote.update({
+        where: { id },
+        data: {
+          notes: data.notes !== undefined ? data.notes : existing.notes,
+          discount: data.discount !== undefined ? data.discount : existing.discount,
+          validUntil: data.validUntil ? new Date(data.validUntil) : existing.validUntil,
+          subtotal: data.items && data.items.length > 0 ? subtotal : existing.subtotal,
+          total: data.items && data.items.length > 0 ? total : existing.total,
+        },
+      });
+
+      // Se houver itens para atualizar, substituir todos
+      if (data.items && data.items.length > 0) {
+        // Deletar itens antigos
+        await tx.quoteItem.deleteMany({
+          where: { quoteId: id },
+        });
+
+        // Criar novos itens
+        await tx.quoteItem.createMany({
+          data: itemsToCreate.map((item) => ({
+            ...item,
+            quoteId: id,
+          })),
+        });
+      }
+
+      // Buscar orçamento atualizado com itens
+      return tx.quote.findUnique({
+        where: { id },
+        include: { client: true, items: { include: { product: true } } },
+      });
     });
   },
 
@@ -148,46 +204,34 @@ export const quotesService = {
   },
 
   async updateStatus(id: string, status: string) {
-  const quote = await prisma.quote.findUnique({ 
-    where: { id },
-    include: { client: true }
-  });
-  
-  if (!quote) throw new AppError('Orçamento não encontrado', 404);
+    const quote = await prisma.quote.findUnique({ 
+      where: { id },
+      include: { client: true }
+    });
+    
+    if (!quote) throw new AppError('Orçamento não encontrado', 404);
 
-  // Valida transições de status
-  const validTransitions: Record<string, string[]> = {
-    'DRAFT': ['SENT', 'APPROVED', 'REJECTED', 'EXPIRED', 'CONVERTED'],
-    'SENT': ['APPROVED', 'REJECTED', 'EXPIRED', 'CONVERTED'],
-    'APPROVED': ['CONVERTED', 'EXPIRED'],
-    'REJECTED': [],
-    'EXPIRED': ['CONVERTED'],
-    'CONVERTED': []
-  };
+    const validTransitions: Record<string, string[]> = {
+      'DRAFT': ['SENT', 'APPROVED', 'REJECTED', 'EXPIRED', 'CONVERTED'],
+      'SENT': ['APPROVED', 'REJECTED', 'EXPIRED', 'CONVERTED'],
+      'APPROVED': ['CONVERTED', 'EXPIRED'],
+      'REJECTED': [],
+      'EXPIRED': ['CONVERTED'],
+      'CONVERTED': []
+    };
 
-  if (!validTransitions[quote.status]?.includes(status)) {
-    throw new AppError(`Transição inválida: ${quote.status} -> ${status}`, 400);
-  }
+    if (!validTransitions[quote.status]?.includes(status)) {
+      throw new AppError(`Transição inválida: ${quote.status} -> ${status}`, 400);
+    }
 
-  // Se for CONVERTED, verifica se há pedido vinculado
-  if (status === 'CONVERTED' && !quote.orderId) {
-    throw new AppError('Não é possível converter para CONVERTED sem um pedido vinculado', 400);
-  }
+    if (status === 'CONVERTED' && !quote.orderId) {
+      throw new AppError('Não é possível converter para CONVERTED sem um pedido vinculado', 400);
+    }
 
-  return prisma.quote.update({
-    where: { id },
-    data: { status: status as any },
-    include: { client: true }
-  });
-},
-
-/**
- * Gera número sequencial para orçamento
- */
-async generateQuoteNumber() {
-  const count = await prisma.quote.count();
-  const settings = await prisma.companySettings.findFirst();
-  const prefix = settings?.quotePrefix || 'ORC';
-  return `${prefix}-${String(count + 1).padStart(6, '0')}`;
-}
+    return prisma.quote.update({
+      where: { id },
+      data: { status: status as any },
+      include: { client: true }
+    });
+  },
 };
