@@ -1,40 +1,41 @@
-import { useAuthStore } from '@/store/auth.store';
-import { useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
-import api from '@/api/client';
-import { toast } from 'sonner';
+// frontend/src/hooks/useSocket.ts (renomear de userSocket.ts)
+import { useEffect, useRef } from "react";
+import { io, Socket } from "socket.io-client";
+import { useAuthStore } from "@/store/auth.store";
 
-export function useAuth() {
-  const navigate = useNavigate();
-  const { user, token, setAuth, logout: storeLogout } = useAuthStore();
+export function useSocket() {
+  const { token } = useAuthStore();
+  const socketRef = useRef<Socket | null>(null);
 
-  const loginMutation = useMutation({
-    mutationFn: (data: { email: string; password: string; rememberMe?: boolean }) =>
-      api.post('/auth/login', data).then(r => r.data),
-    onSuccess: (data) => {
-      setAuth(data.user, data.token, data.refreshToken);
-      toast.success(`Bem-vindo, ${data.user.name}!`);
-      navigate('/');
-    },
-    onError: (error: any) => {
-      const message = error?.response?.data?.error || 'Erro ao fazer login';
-      toast.error(message);
+  useEffect(() => {
+    if (!token) {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      return;
     }
-  });
 
-  const logout = () => {
-    storeLogout();
-    toast.info('Sessão encerrada');
-    navigate('/login');
-  };
+    const socket = io(import.meta.env.VITE_API_URL || "http://localhost:4000", {
+      auth: { token },
+      transports: ["websocket"],
+    });
 
-  return {
-    user,
-    token,
-    isAuthenticated: !!user,
-    login: loginMutation.mutate,
-    loginAsync: loginMutation.mutateAsync,
-    isLoggingIn: loginMutation.isPending,
-    logout,
-  };
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      console.log("🔌 Socket conectado");
+    });
+
+    socket.on("disconnect", () => {
+      console.log("🔌 Socket desconectado");
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [token]);
+
+  return socketRef.current;
 }

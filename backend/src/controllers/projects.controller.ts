@@ -143,10 +143,10 @@ export const projectsController = {
       // Emite via Socket.IO
       req.app.get('io')?.emit('project:deleted', { projectId: id });
       
-      res.status(204).send();
+      return res.status(204).send();
     } catch (e) { 
       console.error('[ProjectsController] delete error:', e);
-      next(e); 
+      return next(e); 
     }
   },
 
@@ -223,7 +223,7 @@ export const projectsController = {
       res.json(result);
     } catch (e) { 
       console.error('[ProjectsController] uploadFiles error:', e);
-      next(e); 
+      return next(e);
     }
   },
 
@@ -264,45 +264,45 @@ export const projectsController = {
 
   async downloadFile(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-    const projectId = getParamId(req.params.id);
-    const fileId = getParamId(req.params.fileId);
-    
-    const file = await prisma.projectFile.findFirst({
-      where: { id: fileId, projectId }
-    });
-      
+      const projectId = getParamId(req.params.id);
+      const fileId = getParamId(req.params.fileId);
+
+      const file = await prisma.projectFile.findFirst({
+        where: { id: fileId, projectId }
+      });
+
       if (!file) {
         return res.status(404).json({ error: 'Arquivo não encontrado' });
       }
-      
+
       const uploadDir = process.env.UPLOAD_DIR || './uploads';
       const filePath = path.join(uploadDir, path.basename(file.url));
-      
+
       console.log('[ProjectsController] downloadFile - filePath:', filePath);
-      
+
       if (!fs.existsSync(filePath)) {
         console.error('[ProjectsController] downloadFile - arquivo físico não encontrado:', filePath);
         return res.status(404).json({ error: 'Arquivo físico não encontrado' });
       }
-      
+
       const stat = fs.statSync(filePath);
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.name)}"`);
       res.setHeader('Content-Length', stat.size);
       res.setHeader('Cache-Control', 'no-cache');
-      
+
       const fileStream = fs.createReadStream(filePath);
-      fileStream.pipe(res);
-      
       fileStream.on('error', (error) => {
         console.error('[ProjectsController] downloadFile - erro no stream:', error);
         if (!res.headersSent) {
-          res.status(500).json({ error: 'Erro ao ler o arquivo' });
+          return res.status(500).json({ error: 'Erro ao ler o arquivo' });
         }
       });
+
+      return fileStream.pipe(res);
     } catch (e) {
       console.error('[ProjectsController] downloadFile error:', e);
-      next(e);
+      return next(e);
     }
   },
 

@@ -3,11 +3,15 @@ import { prisma } from '../config/database';
 import { startOfMonth, subDays, subMonths, endOfDay, format } from 'date-fns';
 
 export const dashboardService = {
+  /**
+   * Métricas principais do dashboard
+   */
   async getMetrics() {
     const now = new Date();
     const monthStart = startOfMonth(now);
     const lastMonthStart = startOfMonth(subMonths(now, 1));
 
+    // Buscar dados reais do banco
     const [
       totalOrders,
       activeClients,
@@ -23,8 +27,7 @@ export const dashboardService = {
           status: { in: ['CREATING', 'AWAITING_APPROVAL', 'PRODUCTION'] } 
         } 
       }),
-      
-      // ✅ Usar paidAt em vez de createdAt
+      // Faturamento do mês atual (considerando pagamentos)
       prisma.order.aggregate({ 
         where: { 
           paidAt: { gte: monthStart, lte: endOfDay(now) }, 
@@ -32,7 +35,7 @@ export const dashboardService = {
         }, 
         _sum: { total: true } 
       }),
-      
+      // Faturamento do mês passado
       prisma.order.aggregate({ 
         where: { 
           paidAt: { gte: lastMonthStart, lt: monthStart }, 
@@ -40,35 +43,46 @@ export const dashboardService = {
         }, 
         _sum: { total: true } 
       }),
-      
+      // Pedidos em orçamento (pendentes)
       prisma.order.count({ where: { status: 'BUDGET' } }),
     ]);
 
+    const currentRevenue = Number(monthRevenue._sum.total) || 0;
+    const previousRevenue = Number(lastMonthRevenue._sum.total) || 0;
+    
+    // Calcular delta de crescimento
+    let revenueDelta = 0;
+    if (previousRevenue > 0) {
+      revenueDelta = ((currentRevenue - previousRevenue) / previousRevenue) * 100;
+    } else if (currentRevenue > 0) {
+      revenueDelta = 100;
+    }
+
     return {
-      totalOrders,
-      activeClients,
-      inProgressProjects,
-      monthRevenue: monthRevenue._sum.total || 0,
-      lastMonthRevenue: lastMonthRevenue._sum.total || 0,
-      revenueDelta: monthRevenue._sum.total != null && lastMonthRevenue._sum.total != null
-        ? ((monthRevenue._sum.total - lastMonthRevenue._sum.total) / lastMonthRevenue._sum.total) * 100
-        : (monthRevenue._sum.total ?? 0) > 0 ? 100 : 0,
-      pendingOrders,
+      totalOrders: Number(totalOrders) || 0,
+      activeClients: Number(activeClients) || 0,
+      inProgressProjects: Number(inProgressProjects) || 0,
+      monthRevenue: currentRevenue,
+      lastMonthRevenue: previousRevenue,
+      revenueDelta,
+      pendingOrders: Number(pendingOrders) || 0,
     };
   },
 
+  /**
+   * Faturamento mensal para o gráfico - USANDO DADOS REAIS
+   */
   async getMonthlyRevenue(months = 12) {
     try {
       const now = new Date();
       const startDate = subMonths(startOfMonth(now), months - 1);
       
-      // 🔧 CORREÇÃO: Buscar dados do banco com paidAt
-      // Usando Prisma diretamente em vez de SQL raw para evitar problemas de fuso
+      // 🔥 CORREÇÃO: Buscar dados reais do banco
       const results = await prisma.$queryRaw`
         SELECT 
           DATE_TRUNC('month', "paidAt") as month,
-          COALESCE(SUM(total), 0)::float as total,
-          COUNT(*)::int as orders
+          COALESCE(SUM(total), 0) as total,
+          COUNT(*) as orders
         FROM "Order"
         WHERE "paymentStatus" = 'PAID' 
           AND "paidAt" IS NOT NULL
@@ -78,41 +92,31 @@ export const dashboardService = {
         ORDER BY month ASC;
       `;
       
-      console.log('[Dashboard] Raw results:', results);
+      console.log('[Dashboard] Dados brutos do revenue:', JSON.stringify(results, null, 2));
       
-      // Preencher meses vazios
-      const filledResults = this.fillMissingMonths(results as any[], months, now);
+      // Preencher meses sem dados
+      const filled = this.fillMissingMonths(results as any[], months, now);
+      console.log('[Dashboard] Dados preenchidos:', JSON.stringify(filled, null, 2));
       
-      console.log('[Dashboard] Filled results:', filledResults);
-      
-      return filledResults;
+      return filled;
     } catch (error) {
       console.error('[Dashboard] Erro no getMonthlyRevenue:', error);
-      // Fallback: retorna dados vazios
       return this.generateEmptyMonthlyData(months, new Date());
     }
   },
 
-  // Fallback para quando a query falha
-  generateEmptyMonthlyData(months: number, now: Date) {
-    const result = [];
-    for (let i = months - 1; i >= 0; i--) {
-      const date = subMonths(startOfMonth(now), i);
-      result.push({
-        month: format(date, 'yyyy-MM-dd'),
-        total: 0,
-        orders: 0
-      });
-    }
-    return result;
-  },
-
+  /**
+   * Preenche meses vazios nos dados de faturamento
+   */
   fillMissingMonths(data: any[], months: number, now: Date) {
     const result: any[] = [];
     const monthMap = new Map();
     
     data.forEach(item => {
-      const date = item.month instanceof Date ? item.month : new Date(item.month);
+      let date = item.month;
+      if (typeof date === 'string') {
+        date = new Date(date);
+      }
       const key = format(date, 'yyyy-MM-dd');
       monthMap.set(key, {
         month: key,
@@ -139,6 +143,25 @@ export const dashboardService = {
     return result;
   },
 
+  /**
+   * Gera dados vazios para fallback
+   */
+  generateEmptyMonthlyData(months: number, now: Date) {
+    const result = [];
+    for (let i = months - 1; i >= 0; i--) {
+      const date = subMonths(startOfMonth(now), i);
+      result.push({
+        month: format(date, 'yyyy-MM-dd'),
+        total: 0,
+        orders: 0
+      });
+    }
+    return result;
+  },
+
+  /**
+   * Top produtos mais vendidos
+   */
   async getTopProducts(limit = 10, days = 30) {
     const since = subDays(new Date(), days);
 
@@ -156,6 +179,8 @@ export const dashboardService = {
       take: limit
     });
 
+    if (grouped.length === 0) return [];
+
     const productIds = grouped.map(g => g.productId);
     const products = await prisma.product.findMany({
       where: { id: { in: productIds } },
@@ -172,42 +197,88 @@ export const dashboardService = {
     }));
   },
 
+  /**
+   * Distribuição de status dos pedidos - DADOS REAIS
+   */
   async getStatusDistribution() {
     const results = await prisma.order.groupBy({ 
       by: ['status'], 
       _count: true 
     });
-    return results.sort((a, b) => a.status.localeCompare(b.status));
+    
+    console.log('[Dashboard] Status distribution raw:', JSON.stringify(results, null, 2));
+    
+    // Se não houver dados, retornar array vazio
+    if (!results || results.length === 0) {
+      return [];
+    }
+    
+    return results.map(r => ({
+      status: r.status,
+      _count: r._count
+    }));
   },
 
+  /**
+   * Atividades recentes do sistema
+   */
   async getRecentActivities(limit = 20) {
     return prisma.activityLog.findMany({
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: { user: { select: { id: true, name: true, avatar: true } } },
+      include: { 
+        user: { 
+          select: { id: true, name: true, avatar: true } 
+        } 
+      },
     });
   },
 
+  /**
+   * Entregas previstas para os próximos dias
+   */
   async getUpcomingDeliveries(days = 7) {
     const now = new Date();
     const limitDate = new Date(now.getTime() + days * 86400000);
+    
     return prisma.order.findMany({
       where: { 
         dueDate: { gte: now, lte: limitDate }, 
         status: { notIn: ['DELIVERED', 'CANCELLED'] } 
       },
-      include: { client: true },
+      include: { 
+        client: {
+          select: { id: true, name: true }
+        } 
+      },
       orderBy: { dueDate: 'asc' },
     });
   },
 
+  /**
+   * Alertas de estoque baixo (produtos)
+   */
   async getLowStockAlerts() {
-    const products = await prisma.product.findMany({ 
-      where: { isActive: true } 
+    return prisma.product.findMany({ 
+      where: { 
+        isActive: true,
+        stock: { lte: prisma.product.fields.minStock }
+      },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        stock: true,
+        minStock: true,
+      },
+      orderBy: { stock: 'asc' },
+      take: 20,
     });
-    return products.filter(p => p.stock <= p.minStock);
   },
 
+  /**
+   * Métricas avançadas para o dashboard
+   */
   async getAdvancedMetrics() {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -221,7 +292,9 @@ export const dashboardService = {
       activeProjects,
       pendingTasks,
       totalClients,
-      lowStockCount
+      lowStockCount,
+      totalProducts,
+      totalSuppliers,
     ] = await Promise.all([
       prisma.order.count(),
       prisma.order.aggregate({
@@ -258,34 +331,45 @@ export const dashboardService = {
           isActive: true,
           stock: { lte: prisma.product.fields.minStock }
         }
-      })
+      }),
+      prisma.product.count({ where: { isActive: true } }),
+      prisma.supplier.count({ where: { isActive: true } }),
     ]);
+
+    const monthlyGrowth = await this.getMonthlyGrowth();
 
     return {
       orders: {
-        total: totalOrders,
-        month: monthRevenue._sum.total || 0,
-        year: yearRevenue._sum.total || 0,
-        totalRevenue: totalRevenue._sum.total || 0,
+        total: Number(totalOrders) || 0,
+        totalRevenue: Number(totalRevenue._sum.total) || 0,
+        monthRevenue: Number(monthRevenue._sum.total) || 0,
+        yearRevenue: Number(yearRevenue._sum.total) || 0,
       },
       projects: {
-        active: activeProjects,
+        active: Number(activeProjects) || 0,
       },
       tasks: {
-        pending: pendingTasks,
+        pending: Number(pendingTasks) || 0,
       },
       clients: {
-        total: totalClients,
+        total: Number(totalClients) || 0,
       },
-      stock: {
-        lowStock: lowStockCount,
+      products: {
+        total: Number(totalProducts) || 0,
+        lowStock: Number(lowStockCount) || 0,
+      },
+      suppliers: {
+        total: Number(totalSuppliers) || 0,
       },
       growth: {
-        monthly: await this.getMonthlyGrowth(),
+        monthly: monthlyGrowth,
       }
     };
   },
 
+  /**
+   * Calcula crescimento mensal do faturamento
+   */
   async getMonthlyGrowth() {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -309,10 +393,51 @@ export const dashboardService = {
       })
     ]);
 
-    const current = currentMonth._sum.total || 0;
-    const previous = lastMonth._sum.total || 0;
+    const current = Number(currentMonth._sum.total) || 0;
+    const previous = Number(lastMonth._sum.total) || 0;
 
     if (previous === 0) return current > 0 ? 100 : 0;
-    return ((current - previous) / previous) * 100;
+    return parseFloat(((current - previous) / previous * 100).toFixed(1));
+  },
+
+  /**
+   * Estatísticas rápidas para o header do dashboard
+   */
+  async getQuickStats() {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay());
+
+    const [
+      ordersToday,
+      ordersThisWeek,
+      revenueToday,
+      newClientsToday,
+    ] = await Promise.all([
+      prisma.order.count({
+        where: { createdAt: { gte: today } }
+      }),
+      prisma.order.count({
+        where: { createdAt: { gte: weekStart } }
+      }),
+      prisma.order.aggregate({
+        where: { 
+          paidAt: { gte: today },
+          paymentStatus: 'PAID' 
+        },
+        _sum: { total: true }
+      }),
+      prisma.client.count({
+        where: { createdAt: { gte: today } }
+      }),
+    ]);
+
+    return {
+      ordersToday: Number(ordersToday) || 0,
+      ordersThisWeek: Number(ordersThisWeek) || 0,
+      revenueToday: Number(revenueToday._sum.total) || 0,
+      newClientsToday: Number(newClientsToday) || 0,
+    };
   }
 };
