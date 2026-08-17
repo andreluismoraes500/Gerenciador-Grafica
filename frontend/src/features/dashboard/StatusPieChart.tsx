@@ -31,84 +31,28 @@ export function StatusPieChart() {
       api.get("/dashboard/status-distribution").then((r) => r.data),
   });
 
-  const chartData = useMemo(() => {
-    if (!data || data.length === 0) {
-      // 🔥 Dados de exemplo quando não há pedidos
-      return [{ name: "Sem pedidos", value: 1, rawStatus: "EMPTY" }];
-    }
+  // 🔥 CORREÇÃO: antes calculávamos "percent" aqui em cima do total geral
+  // (incluindo o item fictício "Sem pedidos"), e o <Pie> do Recharts também
+  // calcula seu próprio "percent" internamente (fração 0-1) com base nos
+  // dados que de fato renderiza (displayData, sem o "Sem pedidos"). Os dois
+  // ficavam de bases diferentes e o label multiplicava tudo de novo por 100,
+  // dando números como "3810%". Agora não guardamos mais "percent" nos
+  // dados — deixamos o Recharts calcular sozinho e usamos só isso no label.
+  const displayData = useMemo(() => {
+    if (!data || data.length === 0) return [];
 
-    const total = data.reduce(
-      (sum: number, d: any) => sum + (d._count || 0),
-      0,
-    );
-
-    if (total === 0) {
-      return [{ name: "Sem pedidos", value: 1, rawStatus: "EMPTY" }];
-    }
-
-    return data.map((d: any) => ({
-      name: getStatusLabel(d.status),
-      value: d._count || 0,
-      rawStatus: d.status,
-      percent: (d._count / total) * 100,
-    }));
+    return data
+      .map((d: any) => ({
+        name: getStatusLabel(d.status),
+        value: d._count || 0,
+        rawStatus: d.status,
+      }))
+      .filter((d: any) => d.value > 0);
   }, [data]);
 
   if (isLoading) return <Skeleton className="h-[280px]" />;
 
-  if (!chartData.length || chartData[0]?.rawStatus === "EMPTY") {
-    return (
-      <div className="h-[280px] flex flex-col items-center justify-center text-muted-foreground">
-        <div className="w-32 h-32 rounded-full border-4 border-dashed border-muted-foreground/30 flex items-center justify-center mb-4">
-          <span className="text-2xl">📦</span>
-        </div>
-        <p className="text-sm font-medium">Nenhum pedido cadastrado</p>
-        <p className="text-xs">
-          Os status aparecerão aqui quando houver pedidos
-        </p>
-      </div>
-    );
-  }
-
-  const formatTooltip = (value: number, name: string) => {
-    if (name === "Sem pedidos") return ["0 pedidos", "Sem dados"];
-    return [`${value} pedido(s)`, name];
-  };
-
-  const CustomLabel = ({
-    cx,
-    cy,
-    midAngle,
-    innerRadius,
-    outerRadius,
-    percent,
-    name,
-  }: any) => {
-    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-    const x = cx + radius * Math.cos((-midAngle * Math.PI) / 180);
-    const y = cy + radius * Math.sin((-midAngle * Math.PI) / 180);
-
-    // Não mostrar label para "Sem pedidos" ou percentual muito baixo
-    if (name === "Sem pedidos" || percent < 0.05) return null;
-
-    return (
-      <text
-        x={x}
-        y={y}
-        fill="white"
-        textAnchor="middle"
-        dominantBaseline="central"
-        className="text-xs font-medium"
-      >
-        {`${(percent * 100).toFixed(0)}%`}
-      </text>
-    );
-  };
-
-  // Filtrar "Sem pedidos" para não aparecer no gráfico se houver outros dados
-  const displayData = chartData.filter((d: any) => d.rawStatus !== "EMPTY");
-  const hasRealData =
-    displayData.length > 0 && displayData.some((d: any) => d.value > 0);
+  const hasRealData = displayData.length > 0;
 
   if (!hasRealData) {
     return (
@@ -123,6 +67,40 @@ export function StatusPieChart() {
       </div>
     );
   }
+
+  const formatTooltip = (value: number, name: string) => {
+    return [`${value} pedido(s)`, name];
+  };
+
+  // "percent" aqui já vem pronto do Recharts como fração (0 a 1),
+  // calculado sobre o próprio displayData que está sendo renderizado.
+  const CustomLabel = ({
+    cx,
+    cy,
+    midAngle,
+    innerRadius,
+    outerRadius,
+    percent,
+  }: any) => {
+    if (!percent || percent < 0.05) return null;
+
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+    const x = cx + radius * Math.cos((-midAngle * Math.PI) / 180);
+    const y = cy + radius * Math.sin((-midAngle * Math.PI) / 180);
+
+    return (
+      <text
+        x={x}
+        y={y}
+        fill="white"
+        textAnchor="middle"
+        dominantBaseline="central"
+        className="text-xs font-medium"
+      >
+        {`${Math.round(percent * 100)}%`}
+      </text>
+    );
+  };
 
   return (
     <ResponsiveContainer width="100%" height={280}>

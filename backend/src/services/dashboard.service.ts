@@ -11,7 +11,6 @@ export const dashboardService = {
     const monthStart = startOfMonth(now);
     const lastMonthStart = startOfMonth(subMonths(now, 1));
 
-    // Buscar dados reais do banco
     const [
       totalOrders,
       activeClients,
@@ -22,35 +21,31 @@ export const dashboardService = {
     ] = await Promise.all([
       prisma.order.count(),
       prisma.client.count(),
-      prisma.project.count({ 
-        where: { 
-          status: { in: ['CREATING', 'AWAITING_APPROVAL', 'PRODUCTION'] } 
-        } 
+      prisma.project.count({
+        where: {
+          status: { in: ['CREATING', 'AWAITING_APPROVAL', 'PRODUCTION'] },
+        },
       }),
-      // Faturamento do mês atual (considerando pagamentos)
-      prisma.order.aggregate({ 
-        where: { 
-          paidAt: { gte: monthStart, lte: endOfDay(now) }, 
-          paymentStatus: 'PAID' 
-        }, 
-        _sum: { total: true } 
+      prisma.order.aggregate({
+        where: {
+          paidAt: { gte: monthStart, lte: endOfDay(now) },
+          paymentStatus: 'PAID',
+        },
+        _sum: { total: true },
       }),
-      // Faturamento do mês passado
-      prisma.order.aggregate({ 
-        where: { 
-          paidAt: { gte: lastMonthStart, lt: monthStart }, 
-          paymentStatus: 'PAID' 
-        }, 
-        _sum: { total: true } 
+      prisma.order.aggregate({
+        where: {
+          paidAt: { gte: lastMonthStart, lt: monthStart },
+          paymentStatus: 'PAID',
+        },
+        _sum: { total: true },
       }),
-      // Pedidos em orçamento (pendentes)
       prisma.order.count({ where: { status: 'BUDGET' } }),
     ]);
 
     const currentRevenue = Number(monthRevenue._sum.total) || 0;
     const previousRevenue = Number(lastMonthRevenue._sum.total) || 0;
-    
-    // Calcular delta de crescimento
+
     let revenueDelta = 0;
     if (previousRevenue > 0) {
       revenueDelta = ((currentRevenue - previousRevenue) / previousRevenue) * 100;
@@ -70,49 +65,59 @@ export const dashboardService = {
   },
 
   /**
-   * Faturamento mensal para o gráfico - USANDO DADOS REAIS
+   * Faturamento mensal para o gráfico
+   *
+   * 🔥 CORREÇÃO: antes usava prisma.$queryRaw com DATE_TRUNC recebendo um
+   * objeto Date do JS interpolado no template — isso falha silenciosamente
+   * em alguns setups de Postgres/Prisma (erro de bind de tipo), cai no
+   * catch e retorna tudo zerado, mesmo havendo pedidos pagos no banco
+   * (por isso o card de faturamento mostrava valor, mas o gráfico não).
+   *
+   * Trocado por uma busca simples com Prisma ORM + agrupamento em JS,
+   * que é mais robusto e não depende de SQL cru.
    */
   async getMonthlyRevenue(months = 12) {
-    try {
-      const now = new Date();
-      const startDate = subMonths(startOfMonth(now), months - 1);
-      
-      // 🔥 CORREÇÃO: Buscar dados reais do banco
-      const results = await prisma.$queryRaw`
-        SELECT 
-          DATE_TRUNC('month', "paidAt") as month,
-          COALESCE(SUM(total), 0) as total,
-          COUNT(*) as orders
-        FROM "Order"
-        WHERE "paymentStatus" = 'PAID' 
-          AND "paidAt" IS NOT NULL
-          AND "paidAt" >= ${startDate}
-          AND "paidAt" <= ${endOfDay(now)}
-        GROUP BY DATE_TRUNC('month', "paidAt")
-        ORDER BY month ASC;
-      `;
-      
-      console.log('[Dashboard] Dados brutos do revenue:', JSON.stringify(results, null, 2));
-      
-      // Preencher meses sem dados
-      const filled = this.fillMissingMonths(results as any[], months, now);
-      console.log('[Dashboard] Dados preenchidos:', JSON.stringify(filled, null, 2));
-      
-      return filled;
-    } catch (error) {
-      console.error('[Dashboard] Erro no getMonthlyRevenue:', error);
-      return this.generateEmptyMonthlyData(months, new Date());
+    const now = new Date();
+    const startDate = subMonths(startOfMonth(now), months - 1);
+
+    const paidOrders = await prisma.order.findMany({
+      where: {
+        paymentStatus: 'PAID',
+        paidAt: { gte: startDate, lte: endOfDay(now) },
+      },
+      select: { paidAt: true, total: true },
+    });
+
+    // Agrupar por mês (yyyy-MM-01) em JS
+    const monthMap = new Map<string, { total: number; orders: number }>();
+    for (const order of paidOrders) {
+      if (!order.paidAt) continue;
+      const key = format(startOfMonth(order.paidAt), 'yyyy-MM-dd');
+      const current = monthMap.get(key) || { total: 0, orders: 0 };
+      current.total += Number(order.total) || 0;
+      current.orders += 1;
+      monthMap.set(key, current);
     }
+
+    return this.fillMissingMonths(
+      Array.from(monthMap.entries()).map(([month, v]) => ({
+        month,
+        total: v.total,
+        orders: v.orders,
+      })),
+      months,
+      now,
+    );
   },
 
   /**
-   * Preenche meses vazios nos dados de faturamento
+   * Preenche meses sem dados de faturamento
    */
   fillMissingMonths(data: any[], months: number, now: Date) {
     const result: any[] = [];
     const monthMap = new Map();
-    
-    data.forEach(item => {
+
+    data.forEach((item) => {
       let date = item.month;
       if (typeof date === 'string') {
         date = new Date(date);
@@ -121,41 +126,21 @@ export const dashboardService = {
       monthMap.set(key, {
         month: key,
         total: Number(item.total) || 0,
-        orders: Number(item.orders) || 0
+        orders: Number(item.orders) || 0,
       });
     });
-    
+
     for (let i = months - 1; i >= 0; i--) {
       const date = subMonths(startOfMonth(now), i);
       const key = format(date, 'yyyy-MM-dd');
-      
+
       if (monthMap.has(key)) {
         result.push(monthMap.get(key));
       } else {
-        result.push({
-          month: key,
-          total: 0,
-          orders: 0
-        });
+        result.push({ month: key, total: 0, orders: 0 });
       }
     }
-    
-    return result;
-  },
 
-  /**
-   * Gera dados vazios para fallback
-   */
-  generateEmptyMonthlyData(months: number, now: Date) {
-    const result = [];
-    for (let i = months - 1; i >= 0; i--) {
-      const date = subMonths(startOfMonth(now), i);
-      result.push({
-        month: format(date, 'yyyy-MM-dd'),
-        total: 0,
-        orders: 0
-      });
-    }
     return result;
   },
 
@@ -170,26 +155,26 @@ export const dashboardService = {
       where: {
         order: {
           paidAt: { gte: since },
-          paymentStatus: 'PAID'
-        }
+          paymentStatus: 'PAID',
+        },
       },
       _sum: { quantity: true, totalPrice: true },
       _count: true,
       orderBy: { _sum: { totalPrice: 'desc' } },
-      take: limit
+      take: limit,
     });
 
     if (grouped.length === 0) return [];
 
-    const productIds = grouped.map(g => g.productId);
+    const productIds = grouped.map((g) => g.productId);
     const products = await prisma.product.findMany({
       where: { id: { in: productIds } },
       select: { id: true, name: true, sku: true },
     });
 
-    const productMap = new Map(products.map(p => [p.id, p]));
+    const productMap = new Map(products.map((p) => [p.id, p]));
 
-    return grouped.map(g => ({
+    return grouped.map((g) => ({
       productId: g.productId,
       product: productMap.get(g.productId) || null,
       _sum: g._sum,
@@ -198,24 +183,21 @@ export const dashboardService = {
   },
 
   /**
-   * Distribuição de status dos pedidos - DADOS REAIS
+   * Distribuição de status dos pedidos
    */
   async getStatusDistribution() {
-    const results = await prisma.order.groupBy({ 
-      by: ['status'], 
-      _count: true 
+    const results = await prisma.order.groupBy({
+      by: ['status'],
+      _count: true,
     });
-    
-    console.log('[Dashboard] Status distribution raw:', JSON.stringify(results, null, 2));
-    
-    // Se não houver dados, retornar array vazio
+
     if (!results || results.length === 0) {
       return [];
     }
-    
-    return results.map(r => ({
+
+    return results.map((r) => ({
       status: r.status,
-      _count: r._count
+      _count: r._count,
     }));
   },
 
@@ -226,10 +208,10 @@ export const dashboardService = {
     return prisma.activityLog.findMany({
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: { 
-        user: { 
-          select: { id: true, name: true, avatar: true } 
-        } 
+      include: {
+        user: {
+          select: { id: true, name: true, avatar: true },
+        },
       },
     });
   },
@@ -240,16 +222,16 @@ export const dashboardService = {
   async getUpcomingDeliveries(days = 7) {
     const now = new Date();
     const limitDate = new Date(now.getTime() + days * 86400000);
-    
+
     return prisma.order.findMany({
-      where: { 
-        dueDate: { gte: now, lte: limitDate }, 
-        status: { notIn: ['DELIVERED', 'CANCELLED'] } 
+      where: {
+        dueDate: { gte: now, lte: limitDate },
+        status: { notIn: ['DELIVERED', 'CANCELLED'] },
       },
-      include: { 
+      include: {
         client: {
-          select: { id: true, name: true }
-        } 
+          select: { id: true, name: true },
+        },
       },
       orderBy: { dueDate: 'asc' },
     });
@@ -259,10 +241,10 @@ export const dashboardService = {
    * Alertas de estoque baixo (produtos)
    */
   async getLowStockAlerts() {
-    return prisma.product.findMany({ 
-      where: { 
+    return prisma.product.findMany({
+      where: {
         isActive: true,
-        stock: { lte: prisma.product.fields.minStock }
+        stock: { lte: prisma.product.fields.minStock },
       },
       select: {
         id: true,
@@ -299,38 +281,38 @@ export const dashboardService = {
       prisma.order.count(),
       prisma.order.aggregate({
         where: { paymentStatus: 'PAID' },
-        _sum: { total: true }
+        _sum: { total: true },
       }),
       prisma.order.aggregate({
-        where: { 
+        where: {
           paidAt: { gte: monthStart, lte: endOfDay(now) },
-          paymentStatus: 'PAID' 
+          paymentStatus: 'PAID',
         },
-        _sum: { total: true }
+        _sum: { total: true },
       }),
       prisma.order.aggregate({
-        where: { 
+        where: {
           paidAt: { gte: yearStart, lte: endOfDay(now) },
-          paymentStatus: 'PAID' 
+          paymentStatus: 'PAID',
         },
-        _sum: { total: true }
+        _sum: { total: true },
       }),
       prisma.project.count({
-        where: { 
-          status: { in: ['CREATING', 'AWAITING_APPROVAL', 'PRODUCTION'] }
-        }
+        where: {
+          status: { in: ['CREATING', 'AWAITING_APPROVAL', 'PRODUCTION'] },
+        },
       }),
       prisma.task.count({
-        where: { 
-          status: { in: ['TODO', 'IN_PROGRESS'] }
-        }
+        where: {
+          status: { in: ['TODO', 'IN_PROGRESS'] },
+        },
       }),
       prisma.client.count(),
       prisma.product.count({
         where: {
           isActive: true,
-          stock: { lte: prisma.product.fields.minStock }
-        }
+          stock: { lte: prisma.product.fields.minStock },
+        },
       }),
       prisma.product.count({ where: { isActive: true } }),
       prisma.supplier.count({ where: { isActive: true } }),
@@ -363,7 +345,7 @@ export const dashboardService = {
       },
       growth: {
         monthly: monthlyGrowth,
-      }
+      },
     };
   },
 
@@ -378,26 +360,26 @@ export const dashboardService = {
 
     const [currentMonth, lastMonth] = await Promise.all([
       prisma.order.aggregate({
-        where: { 
+        where: {
           paidAt: { gte: monthStart, lte: endOfDay(now) },
-          paymentStatus: 'PAID' 
+          paymentStatus: 'PAID',
         },
-        _sum: { total: true }
+        _sum: { total: true },
       }),
       prisma.order.aggregate({
-        where: { 
+        where: {
           paidAt: { gte: lastMonthStart, lte: lastMonthEnd },
-          paymentStatus: 'PAID' 
+          paymentStatus: 'PAID',
         },
-        _sum: { total: true }
-      })
+        _sum: { total: true },
+      }),
     ]);
 
     const current = Number(currentMonth._sum.total) || 0;
     const previous = Number(lastMonth._sum.total) || 0;
 
     if (previous === 0) return current > 0 ? 100 : 0;
-    return parseFloat(((current - previous) / previous * 100).toFixed(1));
+    return parseFloat((((current - previous) / previous) * 100).toFixed(1));
   },
 
   /**
@@ -409,27 +391,22 @@ export const dashboardService = {
     const weekStart = new Date(now);
     weekStart.setDate(now.getDate() - now.getDay());
 
-    const [
-      ordersToday,
-      ordersThisWeek,
-      revenueToday,
-      newClientsToday,
-    ] = await Promise.all([
+    const [ordersToday, ordersThisWeek, revenueToday, newClientsToday] = await Promise.all([
       prisma.order.count({
-        where: { createdAt: { gte: today } }
+        where: { createdAt: { gte: today } },
       }),
       prisma.order.count({
-        where: { createdAt: { gte: weekStart } }
+        where: { createdAt: { gte: weekStart } },
       }),
       prisma.order.aggregate({
-        where: { 
+        where: {
           paidAt: { gte: today },
-          paymentStatus: 'PAID' 
+          paymentStatus: 'PAID',
         },
-        _sum: { total: true }
+        _sum: { total: true },
       }),
       prisma.client.count({
-        where: { createdAt: { gte: today } }
+        where: { createdAt: { gte: today } },
       }),
     ]);
 
@@ -439,5 +416,5 @@ export const dashboardService = {
       revenueToday: Number(revenueToday._sum.total) || 0,
       newClientsToday: Number(newClientsToday) || 0,
     };
-  }
+  },
 };
