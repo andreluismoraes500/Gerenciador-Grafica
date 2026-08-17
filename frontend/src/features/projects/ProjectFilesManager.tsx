@@ -401,10 +401,11 @@ export function ProjectFilesManager({
                   </div>
 
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* Botão Download */}
                     <Button
                       variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
+                      size="sm"
+                      className="h-8 px-2.5 flex items-center gap-1"
                       onClick={() => handleDownload(file)}
                       title="Baixar arquivo"
                       disabled={isDownloading}
@@ -414,15 +415,19 @@ export function ProjectFilesManager({
                       ) : (
                         <Download className="h-4 w-4" />
                       )}
+                      <span className="text-xs hidden group-hover:inline">
+                        Baixar
+                      </span>
                     </Button>
 
                     {isDesigner && (
                       <>
+                        {/* Botão Marcar/Desmarcar como Final */}
                         <Button
                           variant="ghost"
-                          size="icon"
+                          size="sm"
                           className={cn(
-                            "h-8 w-8",
+                            "h-8 px-2.5 flex items-center gap-1",
                             isFinal ? "text-primary" : "text-muted-foreground",
                           )}
                           onClick={() => handleToggleFinal(file.id, isFinal)}
@@ -433,16 +438,23 @@ export function ProjectFilesManager({
                           }
                         >
                           <FileCheck className="h-4 w-4" />
+                          <span className="text-xs hidden group-hover:inline">
+                            {isFinal ? "Desmarcar" : "Marcar Final"}
+                          </span>
                         </Button>
 
+                        {/* Botão Remover */}
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          size="sm"
+                          className="h-8 px-2.5 flex items-center gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
                           onClick={() => handleDelete(file.id)}
                           title="Remover arquivo"
                         >
                           <Trash2 className="h-4 w-4" />
+                          <span className="text-xs hidden group-hover:inline">
+                            Remover
+                          </span>
                         </Button>
                       </>
                     )}

@@ -614,12 +614,15 @@ export function OrdersPage() {
                   <TableCell className="text-right">
                     <Button
                       variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
+                      size="sm"
+                      className="h-9 px-3 flex items-center gap-1.5"
                       title="Ver detalhes"
                       onClick={() => openDetails(o.id)}
                     >
                       <Eye className="h-4 w-4" />
+                      <span className="text-xs font-medium hidden sm:inline">
+                        Detalhes
+                      </span>
                     </Button>
                   </TableCell>
                 </TableRow>

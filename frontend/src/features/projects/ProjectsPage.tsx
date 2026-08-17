@@ -431,35 +431,47 @@ export function ProjectsPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
+                      <div className="flex justify-end gap-2 flex-wrap">
+                        {/* Botão Arquivos */}
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
+                          size="sm"
+                          className="h-9 px-3 flex items-center gap-1.5"
                           onClick={() => handleOpenFiles(project.id)}
                           title="Gerenciar arquivos"
                         >
                           <FileUp className="h-4 w-4" />
+                          <span className="text-xs font-medium hidden sm:inline">
+                            Arquivos
+                          </span>
                         </Button>
 
+                        {/* Botão Detalhes */}
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
+                          size="sm"
+                          className="h-9 px-3 flex items-center gap-1.5"
                           onClick={() => handleOpenDetails(project.id)}
                           title="Ver detalhes"
                         >
                           <Eye className="h-4 w-4" />
+                          <span className="text-xs font-medium hidden sm:inline">
+                            Detalhes
+                          </span>
                         </Button>
 
+                        {/* Menu de opções (mais ações) */}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
                               variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
+                              size="sm"
+                              className="h-9 px-3 flex items-center gap-1.5"
                             >
                               <MoreHorizontal className="h-4 w-4" />
+                              <span className="text-xs font-medium hidden sm:inline">
+                                Mais
+                              </span>
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">

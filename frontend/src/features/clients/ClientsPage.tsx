@@ -225,25 +225,34 @@ export function ClientsPage() {
                       : "—"}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
+                    <div className="flex justify-end gap-3">
+                      {/* Botão Editar */}
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
+                        size="sm"
+                        className="h-9 px-3 flex items-center gap-1.5"
                         onClick={() => openEdit(row)}
                       >
                         <Pencil className="h-4 w-4" />
+                        <span className="text-xs font-medium hidden sm:inline">
+                          Editar
+                        </span>
                       </Button>
+
+                      {/* Botão Excluir */}
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        size="sm"
+                        className="h-9 px-3 flex items-center gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
                         onClick={() => {
                           if (confirm("Excluir este cliente?"))
                             del.mutate(row.id);
                         }}
                       >
                         <Trash2 className="h-4 w-4" />
+                        <span className="text-xs font-medium hidden sm:inline">
+                          Excluir
+                        </span>
                       </Button>
                     </div>
                   </TableCell>

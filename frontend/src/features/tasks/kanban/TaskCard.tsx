@@ -1,3 +1,5 @@
+// frontend/src/features/tasks/kanban/TaskCard.tsx
+
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { motion } from "framer-motion";
@@ -57,7 +59,7 @@ interface TaskCardProps {
   task: Task;
   onEdit: (task: Task) => void;
   onDelete: (id: string) => void;
-  onComplete?: (id: string) => void; // ✅ dar baixa
+  onComplete?: (id: string) => void;
 }
 
 export function TaskCard({
@@ -75,7 +77,6 @@ export function TaskCard({
     isDragging,
   } = useSortable({ id: task.id });
 
-  // 🖱️ touchAction none + listeners no CARD INTEIRO (arrastra de qualquer lugar)
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -104,7 +105,7 @@ export function TaskCard({
         isDragging && "opacity-50 shadow-xl ring-2 ring-primary/50 z-50",
       )}
     >
-      {/* Grip agora é só visual */}
+      {/* Grip visual */}
       <div className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
         <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
       </div>
@@ -176,29 +177,38 @@ export function TaskCard({
           {onComplete && task.status !== "DONE" && (
             <Button
               variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-green-600"
+              size="sm"
+              className="h-7 px-2 text-green-600 flex items-center gap-1"
               title="Dar baixa (concluir)"
               onClick={() => onComplete(task.id)}
             >
-              <CheckCircle2 className="h-3 w-3" />
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span className="text-[10px] hidden group-hover:inline">
+                Concluir
+              </span>
             </Button>
           )}
           <Button
             variant="ghost"
-            size="icon"
-            className="h-6 w-6"
+            size="sm"
+            className="h-7 px-2 flex items-center gap-1"
             onClick={() => onEdit(task)}
           >
-            <Pencil className="h-3 w-3" />
+            <Pencil className="h-3.5 w-3.5" />
+            <span className="text-[10px] hidden group-hover:inline">
+              Editar
+            </span>
           </Button>
           <Button
             variant="ghost"
-            size="icon"
-            className="h-6 w-6 text-destructive hover:text-destructive"
+            size="sm"
+            className="h-7 px-2 flex items-center gap-1 text-destructive hover:text-destructive"
             onClick={() => onDelete(task.id)}
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2 className="h-3.5 w-3.5" />
+            <span className="text-[10px] hidden group-hover:inline">
+              Excluir
+            </span>
           </Button>
         </div>
       </div>

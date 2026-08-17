@@ -270,52 +270,64 @@ export function QuotesPage() {
                     <StatusBadge status={q.status} />
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
+                    <div className="flex justify-end gap-2 flex-wrap">
                       {canEdit(q.status) && (
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
+                          size="sm"
+                          className="h-9 px-3 flex items-center gap-1.5"
                           title="Editar orçamento"
                           onClick={() => openEdit(q)}
                         >
                           <Pencil className="h-4 w-4" />
+                          <span className="text-xs font-medium hidden sm:inline">
+                            Editar
+                          </span>
                         </Button>
                       )}
 
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
+                        size="sm"
+                        className="h-9 px-3 flex items-center gap-1.5"
                         title="Baixar PDF"
                         onClick={() => openPdf(q.id)}
                       >
                         <FileDown className="h-4 w-4" />
+                        <span className="text-xs font-medium hidden sm:inline">
+                          PDF
+                        </span>
                       </Button>
 
                       {q.status !== "CONVERTED" && (
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-green-600 hover:text-green-700"
+                          size="sm"
+                          className="h-9 px-3 flex items-center gap-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950/30"
                           title="Converter em pedido"
                           onClick={() => convertMut.mutate(q.id)}
                           disabled={convertMut.isPending}
                         >
                           <RefreshCw className="h-4 w-4" />
+                          <span className="text-xs font-medium hidden sm:inline">
+                            Converter
+                          </span>
                         </Button>
                       )}
 
                       {canEdit(q.status) && (
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          size="sm"
+                          className="h-9 px-3 flex items-center gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
                           title="Excluir orçamento"
                           onClick={() => handleDelete(q.id)}
                           disabled={deleteMut.isPending}
                         >
                           <Trash2 className="h-4 w-4" />
+                          <span className="text-xs font-medium hidden sm:inline">
+                            Excluir
+                          </span>
                         </Button>
                       )}
                     </div>
