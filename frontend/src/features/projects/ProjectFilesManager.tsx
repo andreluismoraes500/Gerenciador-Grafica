@@ -83,8 +83,6 @@ export function ProjectFilesManager({
   const uploadMutation = useMutation({
     mutationFn: async (formData: FormData) => {
       const url = `/projects/${projectId}/files`;
-      console.log("[Upload] URL:", url);
-      console.log("[Upload] ProjectId:", projectId);
 
       const response = await api.post(url, formData, {
         headers: {
@@ -109,8 +107,6 @@ export function ProjectFilesManager({
       setUploadProgress(0);
     },
     onError: (error: any) => {
-      console.error("[Upload] Erro detalhado:", error);
-
       let message = "Erro ao fazer upload dos arquivos.";
 
       if (error?.response?.status === 400) {
@@ -158,24 +154,22 @@ export function ProjectFilesManager({
   });
 
   // 🔥 FUNÇÃO DE DOWNLOAD CORRIGIDA
-  // 🔥 FUNÇÃO DE DOWNLOAD CORRIGIDA
   const handleDownload = async (file: ProjectFile) => {
     try {
       setDownloading(file.id);
 
-      // 🔥 CORREÇÃO: usar path RELATIVO — a instância `api` já tem baseURL configurada
-      const downloadPath = `/projects/${projectId}/files/${file.id}/download`;
+      const filename = file.url.split("/").pop() || file.name;
 
-      console.log("[Download] Path:", downloadPath);
-      console.log("[Download] File ID:", file.id);
-      console.log("[Download] Project ID:", projectId);
+      // 🔥 CORREÇÃO: usar `api` (que já tem baseURL com /api e injeta o token)
+      // e path RELATIVO batendo com a rota real do backend:
+      // app.get('/api/files/download/:filename', ...)
+      const downloadPath = `/files/download/${filename}`;
 
       const response = await api.get(downloadPath, {
         responseType: "blob",
         timeout: 30000,
       });
 
-      // Criar blob e download
       const blob = new Blob([response.data]);
       const url = window.URL.createObjectURL(blob);
 
@@ -192,8 +186,6 @@ export function ProjectFilesManager({
 
       toast.success(`Download de "${file.name}" iniciado!`);
     } catch (error: any) {
-      console.error("[Download] Erro detalhado:", error);
-
       if (error?.response?.status === 404) {
         toast.error("Arquivo não encontrado no servidor.");
       } else if (error?.response?.status === 401) {
@@ -205,6 +197,7 @@ export function ProjectFilesManager({
       setDownloading(null);
     }
   };
+
   // 🔥 FUNÇÃO PARA PROCESSAR OS ARQUIVOS (UPLOAD)
   const handleFiles = (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) {
@@ -229,12 +222,6 @@ export function ProjectFilesManager({
     acceptedFiles.forEach((file) => {
       formData.append("files", file);
     });
-
-    console.log(
-      "[Upload] Enviando arquivos:",
-      acceptedFiles.map((f) => f.name),
-    );
-    console.log("[Upload] ProjectId:", projectId);
 
     uploadMutation.mutate(formData);
   };

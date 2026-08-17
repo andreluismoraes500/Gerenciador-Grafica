@@ -45,8 +45,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ProjectFilesManager } from "@/components/projects/ProjectFilesManager";
-import { ProjectDetailsDialog } from "@/components/projects/ProjectDetailsDialog";
+import { ProjectFilesManager } from "@/features/projects/ProjectFilesManager";
+import { ProjectDetailsDialog } from "@/features/projects/ProjectDetailsDialog";
 import { formatDate } from "@/lib/utils";
 
 const projectSchema = z.object({
