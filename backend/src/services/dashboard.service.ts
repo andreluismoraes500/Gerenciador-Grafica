@@ -1,6 +1,6 @@
 // backend/src/services/dashboard.service.ts
 import { prisma } from '../config/database';
-import { startOfMonth, subDays, subMonths, endOfDay } from 'date-fns';
+import { startOfMonth, subDays, subMonths, endOfDay, format } from 'date-fns';
 
 export const dashboardService = {
   async getMetrics() {
@@ -18,12 +18,16 @@ export const dashboardService = {
     ] = await Promise.all([
       prisma.order.count(),
       prisma.client.count(),
-      prisma.project.count({ where: { status: { in: ['CREATING', 'AWAITING_APPROVAL', 'PRODUCTION'] } } }),
+      prisma.project.count({ 
+        where: { 
+          status: { in: ['CREATING', 'AWAITING_APPROVAL', 'PRODUCTION'] } 
+        } 
+      }),
       
-      // ✅ CORREÇÃO: Usar createdAt com paymentStatus: 'PAID'
+      // ✅ Usar paidAt em vez de createdAt
       prisma.order.aggregate({ 
         where: { 
-          createdAt: { gte: monthStart, lte: endOfDay(now) }, 
+          paidAt: { gte: monthStart, lte: endOfDay(now) }, 
           paymentStatus: 'PAID' 
         }, 
         _sum: { total: true } 
@@ -31,7 +35,7 @@ export const dashboardService = {
       
       prisma.order.aggregate({ 
         where: { 
-          createdAt: { gte: lastMonthStart, lt: monthStart }, 
+          paidAt: { gte: lastMonthStart, lt: monthStart }, 
           paymentStatus: 'PAID' 
         }, 
         _sum: { total: true } 
@@ -46,68 +50,86 @@ export const dashboardService = {
       inProgressProjects,
       monthRevenue: monthRevenue._sum.total || 0,
       lastMonthRevenue: lastMonthRevenue._sum.total || 0,
-      revenueDelta: monthRevenue._sum.total && lastMonthRevenue._sum.total
+      revenueDelta: monthRevenue._sum.total != null && lastMonthRevenue._sum.total != null
         ? ((monthRevenue._sum.total - lastMonthRevenue._sum.total) / lastMonthRevenue._sum.total) * 100
-        : 100,
+        : (monthRevenue._sum.total ?? 0) > 0 ? 100 : 0,
       pendingOrders,
     };
   },
 
-  // ✅ CORREÇÃO COMPLETA: getMonthlyRevenue usando createdAt com paymentStatus: 'PAID'
   async getMonthlyRevenue(months = 12) {
     try {
       const now = new Date();
       const startDate = subMonths(startOfMonth(now), months - 1);
       
-      const results = await prisma.$queryRawUnsafe(`
+      // 🔧 CORREÇÃO: Buscar dados do banco com paidAt
+      // Usando Prisma diretamente em vez de SQL raw para evitar problemas de fuso
+      const results = await prisma.$queryRaw`
         SELECT 
-          DATE_TRUNC('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo') as month,
+          DATE_TRUNC('month', "paidAt") as month,
           COALESCE(SUM(total), 0)::float as total,
           COUNT(*)::int as orders
         FROM "Order"
         WHERE "paymentStatus" = 'PAID' 
-          AND "createdAt" >= '${startDate.toISOString()}'
-          AND "createdAt" <= '${endOfDay(now).toISOString()}'
-        GROUP BY DATE_TRUNC('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')
+          AND "paidAt" IS NOT NULL
+          AND "paidAt" >= ${startDate}
+          AND "paidAt" <= ${endOfDay(now)}
+        GROUP BY DATE_TRUNC('month', "paidAt")
         ORDER BY month ASC;
-      `);
+      `;
       
-      // Preencher meses vazios com zero
+      console.log('[Dashboard] Raw results:', results);
+      
+      // Preencher meses vazios
       const filledResults = this.fillMissingMonths(results as any[], months, now);
       
-      return filledResults.map((item: any) => {
-        const date = item.month instanceof Date ? item.month : new Date(item.month);
-        return {
-          month: date,
-          total: Number(item.total) || 0,
-          orders: Number(item.orders) || 0
-        };
-      });
+      console.log('[Dashboard] Filled results:', filledResults);
+      
+      return filledResults;
     } catch (error) {
       console.error('[Dashboard] Erro no getMonthlyRevenue:', error);
-      return [];
+      // Fallback: retorna dados vazios
+      return this.generateEmptyMonthlyData(months, new Date());
     }
   },
 
-  // ✅ Função auxiliar para preencher meses sem dados
+  // Fallback para quando a query falha
+  generateEmptyMonthlyData(months: number, now: Date) {
+    const result = [];
+    for (let i = months - 1; i >= 0; i--) {
+      const date = subMonths(startOfMonth(now), i);
+      result.push({
+        month: format(date, 'yyyy-MM-dd'),
+        total: 0,
+        orders: 0
+      });
+    }
+    return result;
+  },
+
   fillMissingMonths(data: any[], months: number, now: Date) {
     const result: any[] = [];
     const monthMap = new Map();
     
     data.forEach(item => {
-      const key = item.month instanceof Date ? item.month.getTime() : new Date(item.month).getTime();
-      monthMap.set(key, item);
+      const date = item.month instanceof Date ? item.month : new Date(item.month);
+      const key = format(date, 'yyyy-MM-dd');
+      monthMap.set(key, {
+        month: key,
+        total: Number(item.total) || 0,
+        orders: Number(item.orders) || 0
+      });
     });
     
     for (let i = months - 1; i >= 0; i--) {
       const date = subMonths(startOfMonth(now), i);
-      const key = date.getTime();
+      const key = format(date, 'yyyy-MM-dd');
       
       if (monthMap.has(key)) {
         result.push(monthMap.get(key));
       } else {
         result.push({
-          month: date,
+          month: key,
           total: 0,
           orders: 0
         });
@@ -124,7 +146,7 @@ export const dashboardService = {
       by: ['productId'],
       where: {
         order: {
-          createdAt: { gte: since },
+          paidAt: { gte: since },
           paymentStatus: 'PAID'
         }
       },
@@ -188,8 +210,8 @@ export const dashboardService = {
 
   async getAdvancedMetrics() {
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const yearStart = new Date(now.getFullYear(), 0, 1);
 
     const [
       totalOrders,
@@ -208,14 +230,14 @@ export const dashboardService = {
       }),
       prisma.order.aggregate({
         where: { 
-          createdAt: { gte: startOfMonth, lte: endOfDay(now) },
+          paidAt: { gte: monthStart, lte: endOfDay(now) },
           paymentStatus: 'PAID' 
         },
         _sum: { total: true }
       }),
       prisma.order.aggregate({
         where: { 
-          createdAt: { gte: startOfYear, lte: endOfDay(now) },
+          paidAt: { gte: yearStart, lte: endOfDay(now) },
           paymentStatus: 'PAID' 
         },
         _sum: { total: true }
@@ -266,21 +288,21 @@ export const dashboardService = {
 
   async getMonthlyGrowth() {
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
 
     const [currentMonth, lastMonth] = await Promise.all([
       prisma.order.aggregate({
         where: { 
-          createdAt: { gte: startOfMonth, lte: endOfDay(now) },
+          paidAt: { gte: monthStart, lte: endOfDay(now) },
           paymentStatus: 'PAID' 
         },
         _sum: { total: true }
       }),
       prisma.order.aggregate({
         where: { 
-          createdAt: { gte: startOfLastMonth, lte: endOfLastMonth },
+          paidAt: { gte: lastMonthStart, lte: lastMonthEnd },
           paymentStatus: 'PAID' 
         },
         _sum: { total: true }

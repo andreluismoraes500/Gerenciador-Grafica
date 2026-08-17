@@ -209,7 +209,7 @@ export const ordersService = {
 
   /**
    * Update payment status with automatic financial integration
-   * ✅ CORREÇÃO: Garantir que paidAt seja preenchido
+   * ✅ CORREÇÃO: Garantir que paidAt seja preenchido corretamente
    */
   async updatePaymentStatus(id: string, paymentStatus: string) {
     const existing = await prisma.order.findUnique({
@@ -218,13 +218,10 @@ export const ordersService = {
     });
     if (!existing) throw new AppError('Pedido não encontrado', 404);
 
-    const data: any = { paymentStatus: paymentStatus as any };
-
     // Se for PAID, cria transação financeira automaticamente
     if (paymentStatus === 'PAID') {
-      data.paidAt = new Date(); // ✅ GARANTIR QUE paidAt SEJA PREENCHIDO
+      const paidAt = new Date(); // ✅ Data do pagamento
 
-      // Cria a transação de receita
       await prisma.$transaction(async (tx) => {
         // Verifica se já existe uma transação para este pedido
         const existingTransaction = await tx.transaction.findFirst({
@@ -241,8 +238,8 @@ export const ordersService = {
               category: 'Venda de Pedido',
               description: `Receita do Pedido ${existing.code} - ${existing.client?.name || ''}`,
               amount: existing.total,
-              dueDate: new Date(),
-              paidAt: new Date(),
+              dueDate: paidAt,
+              paidAt: paidAt, // ✅ Garantir que paidAt seja preenchido
               status: 'PAID',
               orderId: existing.id,
               clientId: existing.clientId,
@@ -255,7 +252,7 @@ export const ordersService = {
           where: { id },
           data: { 
             paymentStatus: 'PAID', 
-            paidAt: new Date() // ✅ GARANTIR QUE SEJA PREENCHIDO
+            paidAt: paidAt // ✅ GARANTIR QUE SEJA PREENCHIDO
           },
         });
       });
@@ -325,13 +322,24 @@ export const ordersService = {
       months.map(async monthStart => {
         const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1);
         const [count, revenue] = await Promise.all([
-          prisma.order.count({ where: { createdAt: { gte: monthStart, lt: monthEnd } } }),
+          prisma.order.count({ 
+            where: { 
+              createdAt: { gte: monthStart, lt: monthEnd } 
+            } 
+          }),
           prisma.order.aggregate({
-            where: { createdAt: { gte: monthStart, lt: monthEnd }, paymentStatus: 'PAID' },
+            where: { 
+              paidAt: { gte: monthStart, lt: monthEnd }, // ✅ Usar paidAt
+              paymentStatus: 'PAID' 
+            },
             _sum: { total: true },
           }),
         ]);
-        return { month: monthStart, orders: count, revenue: revenue._sum.total || 0 };
+        return { 
+          month: monthStart, 
+          orders: count, 
+          revenue: revenue._sum.total || 0 
+        };
       }),
     );
 

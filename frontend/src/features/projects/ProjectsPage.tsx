@@ -1,3 +1,4 @@
+// frontend/src/features/projects/ProjectsPage.tsx
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -9,9 +10,9 @@ import {
   Search,
   Inbox,
   Eye,
-  Upload,
-  CheckCircle,
   FileUp,
+  CheckCircle,
+  Upload,
   MoreHorizontal,
 } from "lucide-react";
 import api from "@/api/client";
@@ -48,7 +49,6 @@ import { ProjectFilesManager } from "@/components/projects/ProjectFilesManager";
 import { ProjectDetailsDialog } from "@/components/projects/ProjectDetailsDialog";
 import { formatDate } from "@/lib/utils";
 
-// Schema de validação para o formulário
 const projectSchema = z.object({
   title: z.string().min(3, "Título deve ter pelo menos 3 caracteres"),
   description: z.string().optional(),
@@ -80,7 +80,6 @@ export function ProjectsPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
 
-  // Queries para dados
   const { data, isLoading } = useQuery({
     queryKey: ["projects", search],
     queryFn: () =>
@@ -94,7 +93,6 @@ export function ProjectsPage() {
         .then((r) => r.data),
   });
 
-  // Busca clientes com suporte a busca
   const { data: clients, isLoading: clientsLoading } = useQuery({
     queryKey: ["clients-select", clientSearch],
     queryFn: () =>
@@ -113,7 +111,6 @@ export function ProjectsPage() {
     queryFn: () => api.get("/settings/users").then((r) => r.data),
   });
 
-  // Formulário
   const {
     register,
     handleSubmit,
@@ -126,14 +123,8 @@ export function ProjectsPage() {
     defaultValues,
   });
 
-  // Observa o valor do cliente para exibir no campo
   const clientIdValue = watch("clientId");
-  const selectedClient = useMemo(() => {
-    if (!clients) return null;
-    return clients.find((c: any) => c.id === clientIdValue);
-  }, [clients, clientIdValue]);
 
-  // Mutations
   const createProjectMut = useMutation({
     mutationFn: async (data: ProjectForm) => {
       const payload: any = {
@@ -201,7 +192,6 @@ export function ProjectsPage() {
     },
   });
 
-  // Handlers
   const handleOpenFiles = (projectId: string) => {
     setSelectedProjectId(projectId);
     setFilesDialogOpen(true);
@@ -254,7 +244,6 @@ export function ProjectsPage() {
         </div>
       </div>
 
-      {/* Tabela de Projetos */}
       <div className="rounded-lg border bg-card shadow-sm overflow-x-auto">
         <Table>
           <TableHeader>
@@ -449,7 +438,7 @@ export function ProjectsPage() {
         </Table>
       </div>
 
-      {/* Dialog de Criação de Projeto com SearchSelect */}
+      {/* Dialog de Criação de Projeto - SEM PRÉ-LISTA */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -457,7 +446,6 @@ export function ProjectsPage() {
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-4">
-              {/* Título */}
               <div className="space-y-2">
                 <Label htmlFor="title">Título do Projeto *</Label>
                 <Input
@@ -472,7 +460,7 @@ export function ProjectsPage() {
                 )}
               </div>
 
-              {/* Cliente - AGORA COM SEARCHSELECT */}
+              {/* Cliente - SEM PRÉ-LISTA */}
               <div className="space-y-2">
                 <Label htmlFor="clientId">Cliente *</Label>
                 <SearchSelect
@@ -495,16 +483,9 @@ export function ProjectsPage() {
                     {errors.clientId.message}
                   </p>
                 )}
-                {selectedClient && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Selecionado:{" "}
-                    <span className="font-medium">{selectedClient.name}</span>
-                    {selectedClient.document && ` • ${selectedClient.document}`}
-                  </p>
-                )}
+                {/* ✅ REMOVIDO: pré-lista do cliente selecionado */}
               </div>
 
-              {/* Designer */}
               <div className="space-y-2">
                 <Label htmlFor="designerId">Designer Responsável</Label>
                 <Select
@@ -525,7 +506,6 @@ export function ProjectsPage() {
                 />
               </div>
 
-              {/* Prioridade e Prazo */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="priority">Prioridade</Label>
@@ -546,7 +526,6 @@ export function ProjectsPage() {
                 </div>
               </div>
 
-              {/* Descrição */}
               <div className="space-y-2">
                 <Label htmlFor="description">Descrição</Label>
                 <Textarea
@@ -581,7 +560,6 @@ export function ProjectsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog de Gerenciamento de Arquivos */}
       <Dialog open={filesDialogOpen} onOpenChange={setFilesDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -600,7 +578,6 @@ export function ProjectsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog de Detalhes do Projeto */}
       <ProjectDetailsDialog
         projectId={selectedProjectId}
         open={detailsOpen}

@@ -1,3 +1,4 @@
+// frontend/src/components/ui/search-select.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,8 @@ interface Props {
   className?: string;
   isLoading?: boolean;
   disabled?: boolean;
+  onSearchChange?: (value: string) => void;
+  searchValue?: string;
 }
 
 export function SearchSelect({
@@ -27,15 +30,25 @@ export function SearchSelect({
   className,
   isLoading = false,
   disabled = false,
+  onSearchChange,
+  searchValue: externalSearchValue = "",
 }: Props) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [internalQuery, setInternalQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const selected = options.find((o) => o.value === value);
 
+  // ✅ Usa busca externa se fornecida, senão usa interna
+  const query =
+    externalSearchValue !== undefined && onSearchChange !== undefined
+      ? externalSearchValue
+      : internalQuery;
+
+  // ✅ Filtra opções baseado na busca
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return options;
+    if (!q) return [];
     return options.filter(
       (o) =>
         o.label.toLowerCase().includes(q) ||
@@ -43,47 +56,100 @@ export function SearchSelect({
     );
   }, [options, query]);
 
+  // ✅ Fecha ao clicar fora
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false);
+        // Se for controle externo, limpa a busca externa
+        if (onSearchChange) {
+          onSearchChange("");
+        } else {
+          setInternalQuery("");
+        }
       }
     };
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
+  }, [onSearchChange]);
+
+  // ✅ Fecha ao pressionar ESC
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        if (onSearchChange) {
+          onSearchChange("");
+        } else {
+          setInternalQuery("");
+        }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onSearchChange]);
 
   const handleSelect = (option: SearchSelectOption) => {
     onChange(option.value);
     setOpen(false);
-    setQuery("");
+    if (onSearchChange) {
+      onSearchChange("");
+    } else {
+      setInternalQuery("");
+    }
+    if (inputRef.current) {
+      inputRef.current.blur();
+    }
   };
 
   const handleClear = () => {
     onChange("");
-    setQuery("");
+    if (onSearchChange) {
+      onSearchChange("");
+    } else {
+      setInternalQuery("");
+    }
   };
+
+  const handleFocus = () => {
+    if (!disabled) {
+      setOpen(true);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+
+    // ✅ Atualiza a busca (externa ou interna)
+    if (onSearchChange) {
+      onSearchChange(val);
+    } else {
+      setInternalQuery(val);
+    }
+
+    setOpen(true);
+
+    // ✅ Se apagou tudo, limpa a seleção
+    if (val === "") {
+      onChange("");
+    }
+  };
+
+  // ✅ Mostra o label do item selecionado ou o query quando aberto
+  const displayValue = open ? query : (selected?.label ?? "");
 
   return (
     <div ref={ref} className={cn("relative", className)}>
       <div className="relative">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
         <Input
+          ref={inputRef}
           className="pl-8 pr-16 cursor-text"
           placeholder={placeholder}
-          value={open ? query : (selected?.label ?? "")}
-          onFocus={() => {
-            if (!disabled) {
-              setOpen(true);
-              setQuery("");
-            }
-          }}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
+          value={displayValue}
+          onFocus={handleFocus}
+          onChange={handleInputChange}
           disabled={disabled}
-          readOnly={!open && !!selected}
         />
         <div className="absolute right-1 top-1 flex items-center gap-0.5">
           {value && !disabled && (
@@ -106,7 +172,8 @@ export function SearchSelect({
         </div>
       </div>
 
-      {open && !disabled && (
+      {/* ✅ Lista de resultados - SÓ APARECE QUANDO OPEN E TEM QUERY */}
+      {open && !disabled && query.trim().length > 0 && (
         <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-md border bg-card shadow-lg">
           {isLoading ? (
             <div className="p-4 text-center text-sm text-muted-foreground">
@@ -114,9 +181,7 @@ export function SearchSelect({
             </div>
           ) : filtered.length === 0 ? (
             <div className="p-4 text-center text-sm text-muted-foreground">
-              {query.trim()
-                ? "Nenhum resultado encontrado."
-                : "Digite para buscar..."}
+              Nenhum resultado encontrado para "{query}"
             </div>
           ) : (
             filtered.map((o) => (

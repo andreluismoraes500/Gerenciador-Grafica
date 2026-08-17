@@ -17,23 +17,26 @@ export const dashboardController = {
       const months = parseInt(req.query.months as string) || 12;
       const revenue = await dashboardService.getMonthlyRevenue(months);
       
-      // ✅ CORREÇÃO: Garantir que os dados estejam no formato correto
+      // ✅ CORREÇÃO: Garantir que os dados estejam no formato esperado pelo gráfico
+      // O gráfico espera: [{ month: "2026-08-01", total: 600, orders: 1 }]
       const formattedRevenue = revenue.map((item: any) => {
-        // Se month for string no formato YYYY-MM-DD, mantém
-        let month = item.month;
-        
-        // Se for um objeto Date, converte para string
+        // Se month for um objeto Date, converte para string ISO
+        let monthStr = item.month;
         if (item.month instanceof Date) {
-          month = format(item.month, 'yyyy-MM-dd');
+          monthStr = format(item.month, 'yyyy-MM-dd');
+        } else if (typeof item.month === 'string' && item.month.includes('T')) {
+          // Se for ISO string, extrai apenas a data
+          monthStr = item.month.split('T')[0];
         }
         
         return {
-          month: month,
+          month: monthStr,
           total: Number(item.total) || 0,
           orders: Number(item.orders) || 0
         };
       });
       
+      console.log('[Dashboard] Revenue data:', JSON.stringify(formattedRevenue, null, 2));
       res.json(formattedRevenue);
     } catch (e) { 
       console.error('[Dashboard] Erro ao buscar receita:', e);

@@ -1,3 +1,4 @@
+// backend/src/services/clients.service.ts
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import bcrypt from 'bcryptjs';
@@ -46,130 +47,170 @@ export const clientsService = {
   },
 
   async create(data: any, _createdBy: string) {
-    // Normalizar documento removendo pontuação
-    const cleanDocument = data.document.replace(/[^\d]/g, '');
-    
-    const existingClient = await prisma.client.findFirst({
-      where: { OR: [{ email: data.email || null }, { document: cleanDocument }] },
-    });
-    
-    if (existingClient) throw new AppError('Cliente com este email ou documento já existe', 409);
-    
-    const existingUser = data.email ? await prisma.user.findUnique({ where: { email: data.email } }) : null;
-    if (existingUser) {
-      throw new AppError('Já existe um usuário cadastrado com este e-mail', 409);
-    }
-    
-    const { address, ...clientData } = data;
-    const tempPassword = randomBytes(8).toString('hex');
-    const passwordHash = await bcrypt.hash(tempPassword, 12);
-    
-    const client = await prisma.$transaction(async (tx) => {
+    try {
+      // Normalizar documento removendo pontuação
+      const cleanDocument = data.document.replace(/[^\d]/g, '');
+      
+      // Verificar se já existe cliente com este documento ou email
+      const existingClient = await prisma.client.findFirst({
+        where: { 
+          OR: [
+            { document: cleanDocument },
+            ...(data.email ? [{ email: data.email }] : [])
+          ]
+        },
+      });
+      
+      if (existingClient) {
+        throw new AppError('Cliente com este documento ou email já existe', 409);
+      }
+      
+      // Verificar se já existe usuário com este email
+      if (data.email) {
+        const existingUser = await prisma.user.findUnique({ 
+          where: { email: data.email } 
+        });
+        if (existingUser) {
+          throw new AppError('Já existe um usuário cadastrado com este e-mail', 409);
+        }
+      }
+      
+      const { address, ...clientData } = data;
+      const tempPassword = randomBytes(8).toString('hex');
+      const passwordHash = await bcrypt.hash(tempPassword, 12);
+      
       // Se não tem email, gerar um fictício baseado no documento
-      const email = data.email || `${cleanDocument}@sem-email.local`;
+      const email = data.email || `${cleanDocument}@cliente.local`;
       
-      const user = await tx.user.create({
-        data: {
-          name: data.name,
-          email,
-          password: passwordHash,
-          role: 'CLIENT',
-        },
+      const client = await prisma.$transaction(async (tx) => {
+        // Criar usuário para o cliente
+        const user = await tx.user.create({
+          data: {
+            name: data.name,
+            email: email,
+            password: passwordHash,
+            role: 'CLIENT',
+          },
+        });
+        
+        // Criar o cliente vinculado ao usuário
+        return tx.client.create({
+          data: {
+            ...clientData,
+            document: cleanDocument,
+            email: email, // Garantir que email não seja vazio
+            userId: user.id,
+            birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
+            address: address ? { 
+              create: {
+                ...address,
+                // Garantir campos obrigatórios
+                street: address.street || 'Não informado',
+                number: address.number || 'S/N',
+                district: address.district || 'Não informado',
+                city: address.city || 'Não informado',
+                state: address.state || 'SP',
+                zipCode: address.zipCode || '00000-000',
+              }
+            } : undefined,
+          },
+          include: { address: true },
+        });
       });
       
-      return tx.client.create({
-        data: {
-          ...clientData,
-          document: cleanDocument,
-          userId: user.id,
-          birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
-          address: address ? { create: address } : undefined,
-        },
-        include: { address: true },
-      });
-    });
-    
-    return client;
+      return client;
+    } catch (error) {
+      console.error('[clients.service] Erro ao criar cliente:', error);
+      if (error instanceof AppError) throw error;
+      throw new AppError('Erro interno ao criar cliente', 500);
+    }
   },
 
   async update(id: string, data: any, _updatedBy: string) {
-    const existing = await prisma.client.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Client not found', 404);
+    try {
+      const existing = await prisma.client.findUnique({ where: { id } });
+      if (!existing) throw new AppError('Client not found', 404);
 
-    const { address, ...clientData } = data;
+      const { address, ...clientData } = data;
 
-    // Normalizar documento se fornecido
-    if (data.document) {
-      clientData.document = data.document.replace(/[^\d]/g, '');
-    }
-
-    // Mantém o User (login do cliente) sincronizado com nome/e-mail do Client,
-    // já que hoje eles ficavam dessincronizados após uma edição.
-    const client = await prisma.$transaction(async (tx) => {
-      if (data.name || data.email) {
-        await tx.user.update({
-          where: { id: existing.userId },
-          data: {
-            ...(data.name ? { name: data.name } : {}),
-            ...(data.email ? { email: data.email } : {}),
-          },
-        });
+      // Normalizar documento se fornecido
+      if (data.document) {
+        clientData.document = data.document.replace(/[^\d]/g, '');
       }
 
-      return tx.client.update({
-        where: { id },
-        data: {
-          ...clientData,
-          birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
-          address: address
-            ? {
-                upsert: {
-                  create: address,
-                  update: address,
-                },
-              }
-            : undefined,
-        },
-        include: { address: true },
-      });
-    });
+      // Mantém o User (login do cliente) sincronizado
+      const client = await prisma.$transaction(async (tx) => {
+        if (data.name || data.email) {
+          await tx.user.update({
+            where: { id: existing.userId },
+            data: {
+              ...(data.name ? { name: data.name } : {}),
+              ...(data.email ? { email: data.email } : {}),
+            },
+          });
+        }
 
-    return client;
+        return tx.client.update({
+          where: { id },
+          data: {
+            ...clientData,
+            birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
+            address: address
+              ? {
+                  upsert: {
+                    create: {
+                      ...address,
+                      street: address.street || 'Não informado',
+                      number: address.number || 'S/N',
+                      district: address.district || 'Não informado',
+                      city: address.city || 'Não informado',
+                      state: address.state || 'SP',
+                      zipCode: address.zipCode || '00000-000',
+                    },
+                    update: address,
+                  },
+                }
+              : undefined,
+          },
+          include: { address: true },
+        });
+      });
+
+      return client;
+    } catch (error) {
+      console.error('[clients.service] Erro ao atualizar cliente:', error);
+      if (error instanceof AppError) throw error;
+      throw new AppError('Erro interno ao atualizar cliente', 500);
+    }
   },
 
   async delete(id: string, _deletedBy: string) {
-    const existing = await prisma.client.findUnique({
-      where: { id },
-      include: {
-        _count: { select: { orders: true, projects: true, quotes: true } },
-      },
-    });
-    if (!existing) throw new AppError('Client not found', 404);
-
-    const { orders, projects, quotes } = existing._count;
-    if (orders > 0 || projects > 0 || quotes > 0) {
-      throw new AppError(
-        'Não é possível excluir este cliente pois existem pedidos, projetos ou orçamentos vinculados a ele. Remova ou transfira esses registros antes de excluir o cliente.',
-        409,
-      );
-    }
-
     try {
-      // Exclui o Client e o User (login do cliente) juntos. Antes, apenas o
-      // Client era removido e o User ficava para sempre "pré-cadastrado"
-      // na tela de Configurações > Usuários.
+      const existing = await prisma.client.findUnique({
+        where: { id },
+        include: {
+          _count: { select: { orders: true, projects: true, quotes: true } },
+        },
+      });
+      if (!existing) throw new AppError('Client not found', 404);
+
+      const { orders, projects, quotes } = existing._count;
+      if (orders > 0 || projects > 0 || quotes > 0) {
+        throw new AppError(
+          'Não é possível excluir este cliente pois existem pedidos, projetos ou orçamentos vinculados a ele.',
+          409,
+        );
+      }
+
+      // Exclui o Client e o User (login do cliente) juntos
       await prisma.$transaction([
         prisma.client.delete({ where: { id } }),
         prisma.user.delete({ where: { id: existing.userId } }),
       ]);
-    } catch (err: any) {
-      if (err.code === 'P2003') {
-        throw new AppError(
-          'Não foi possível excluir o cliente pois existem outros registros vinculados ao usuário associado.',
-          409,
-        );
-      }
-      throw err;
+    } catch (error) {
+      console.error('[clients.service] Erro ao excluir cliente:', error);
+      if (error instanceof AppError) throw error;
+      throw new AppError('Erro interno ao excluir cliente', 500);
     }
   },
 

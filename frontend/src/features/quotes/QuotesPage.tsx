@@ -2,14 +2,12 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, FileDown, RefreshCw, Inbox, Search } from "lucide-react";
+import { Plus, FileDown, RefreshCw, Inbox, Pencil, Trash2 } from "lucide-react";
 import api from "@/api/client";
-import { useList } from "@/components/crud/CrudPage";
 import { ItemsEditor, ItemRow } from "@/components/crud/ItemsEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/badge";
 import {
@@ -36,12 +34,10 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 export function QuotesPage() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [editingQuote, setEditingQuote] = useState<any>(null);
   const [clientId, setClientId] = useState("");
   const [validUntil, setValidUntil] = useState("");
   const [items, setItems] = useState<ItemRow[]>([]);
-
-  // Estado para busca de clientes no SearchSelect
-  const [clientSearch, setClientSearch] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["quotes"],
@@ -49,21 +45,16 @@ export function QuotesPage() {
       api.get("/quotes", { params: { limit: 50 } }).then((r) => r.data),
   });
 
-  // Busca clientes com suporte a busca textual
   const { data: clients, isLoading: clientsLoading } = useQuery({
-    queryKey: ["clients-select", clientSearch],
+    queryKey: ["clients-select"],
     queryFn: () =>
       api
         .get("/clients", {
-          params: {
-            limit: 50,
-            search: clientSearch || undefined,
-          },
+          params: { limit: 200 },
         })
         .then((r) => r.data.data || []),
   });
 
-  // Converte clientes para o formato do SearchSelect
   const clientOptions: SearchSelectOption[] = useMemo(() => {
     if (!clients) return [];
     return clients.map((c: any) => ({
@@ -73,17 +64,43 @@ export function QuotesPage() {
     }));
   }, [clients]);
 
-  const products = useList("/products?limit=200");
-
   const createMut = useMutation({
     mutationFn: (p: any) => api.post("/quotes", p),
     onSuccess: () => {
       toast.success("Orçamento criado!");
       qc.invalidateQueries({ queryKey: ["quotes"] });
-      reset();
+      resetForm();
     },
-    onError: (e: any) =>
-      toast.error(e?.response?.data?.error || "Erro ao criar orçamento."),
+    onError: (e: any) => {
+      const msg = e?.response?.data?.error || "Erro ao criar orçamento.";
+      toast.error(msg);
+    },
+  });
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) =>
+      api.put(`/quotes/${id}`, data),
+    onSuccess: () => {
+      toast.success("Orçamento atualizado!");
+      qc.invalidateQueries({ queryKey: ["quotes"] });
+      resetForm();
+    },
+    onError: (e: any) => {
+      const msg = e?.response?.data?.error || "Erro ao atualizar orçamento.";
+      toast.error(msg);
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/quotes/${id}`),
+    onSuccess: () => {
+      toast.success("Orçamento excluído!");
+      qc.invalidateQueries({ queryKey: ["quotes"] });
+    },
+    onError: (e: any) => {
+      const msg = e?.response?.data?.error || "Erro ao excluir orçamento.";
+      toast.error(msg);
+    },
   });
 
   const convertMut = useMutation({
@@ -91,33 +108,65 @@ export function QuotesPage() {
       api.post(`/quotes/${id}/convert-to-order`, { paymentMethod: "PIX" }),
     onSuccess: () => {
       toast.success("Convertido em pedido! 🎉");
-      qc.invalidateQueries();
+      qc.invalidateQueries({ queryKey: ["quotes"] });
     },
-    onError: (e: any) =>
-      toast.error(e?.response?.data?.error || "Erro ao converter."),
+    onError: (e: any) => {
+      const msg = e?.response?.data?.error || "Erro ao converter.";
+      toast.error(msg);
+    },
   });
 
   const statusMut = useMutation({
-    mutationFn: ({ id, status }: any) =>
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
       api.patch(`/quotes/${id}/status`, { status }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["quotes"] }),
+    onSuccess: () => {
+      toast.success("Status atualizado!");
+      qc.invalidateQueries({ queryKey: ["quotes"] });
+    },
+    onError: (e: any) => {
+      const msg = e?.response?.data?.error || "Erro ao atualizar status.";
+      toast.error(msg);
+    },
   });
 
-  const openPdf = async (id: string) => {
-    const res = await api.get(`/quotes/${id}/pdf`, { responseType: "blob" });
-    window.open(URL.createObjectURL(res.data), "_blank");
-  };
-
-  const reset = () => {
+  const resetForm = () => {
     setOpen(false);
+    setEditingQuote(null);
     setClientId("");
     setItems([]);
     setValidUntil("");
-    setClientSearch("");
   };
 
-  const submit = () =>
-    createMut.mutate({
+  const openCreate = () => {
+    setEditingQuote(null);
+    setClientId("");
+    setItems([]);
+    setValidUntil("");
+    setOpen(true);
+  };
+
+  const openEdit = (quote: any) => {
+    setEditingQuote(quote);
+    setClientId(quote.clientId);
+    setValidUntil(quote.validUntil ? quote.validUntil.split("T")[0] : "");
+    setItems(
+      quote.items?.map((item: any) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      })) || [],
+    );
+    setOpen(true);
+  };
+
+  const handleDelete = (id: string) => {
+    if (confirm("Tem certeza que deseja excluir este orçamento?")) {
+      deleteMut.mutate(id);
+    }
+  };
+
+  const submit = () => {
+    const payload = {
       clientId,
       validUntil: new Date(
         (validUntil || new Date().toISOString().slice(0, 10)) + "T12:00:00",
@@ -127,13 +176,25 @@ export function QuotesPage() {
         quantity: i.quantity,
         unitPrice: i.unitPrice,
       })),
-    });
+    };
 
-  // Busca o cliente selecionado para exibir informações adicionais
-  const selectedClient = useMemo(() => {
-    if (!clients) return null;
-    return clients.find((c: any) => c.id === clientId);
-  }, [clients, clientId]);
+    if (editingQuote) {
+      updateMut.mutate({ id: editingQuote.id, data: payload });
+    } else {
+      createMut.mutate(payload);
+    }
+  };
+
+  const openPdf = async (id: string) => {
+    try {
+      const res = await api.get(`/quotes/${id}/pdf`, { responseType: "blob" });
+      window.open(URL.createObjectURL(res.data), "_blank");
+    } catch (error) {
+      toast.error("Erro ao gerar PDF");
+    }
+  };
+
+  const canEdit = (status: string) => status === "DRAFT";
 
   return (
     <div className="space-y-6">
@@ -144,7 +205,7 @@ export function QuotesPage() {
             Propostas comerciais com PDF e conversão em pedido
           </p>
         </div>
-        <Button onClick={() => setOpen(true)}>
+        <Button onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" />
           Novo Orçamento
         </Button>
@@ -177,6 +238,10 @@ export function QuotesPage() {
                   <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
                     <Inbox className="h-10 w-10 opacity-30" />
                     <p className="text-sm">Nenhum orçamento.</p>
+                    <Button variant="outline" size="sm" onClick={openCreate}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Criar primeiro orçamento
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -198,8 +263,20 @@ export function QuotesPage() {
                   <TableCell>
                     <StatusBadge status={q.status} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
+                      {canEdit(q.status) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title="Editar orçamento"
+                          onClick={() => openEdit(q)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+
                       <Button
                         variant="ghost"
                         size="icon"
@@ -209,35 +286,31 @@ export function QuotesPage() {
                       >
                         <FileDown className="h-4 w-4" />
                       </Button>
+
                       {q.status !== "CONVERTED" && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8"
+                          className="h-8 w-8 text-green-600 hover:text-green-700"
                           title="Converter em pedido"
                           onClick={() => convertMut.mutate(q.id)}
+                          disabled={convertMut.isPending}
                         >
                           <RefreshCw className="h-4 w-4" />
                         </Button>
                       )}
-                      {q.status === "DRAFT" && (
-                        <Select
-                          className="h-8 w-28 text-xs"
-                          value=""
-                          placeholder="Ações..."
-                          options={[
-                            { value: "SENT", label: "Marcar enviado" },
-                            { value: "APPROVED", label: "Aprovado" },
-                            { value: "REJECTED", label: "Rejeitado" },
-                          ]}
-                          onChange={(e) =>
-                            e.target.value &&
-                            statusMut.mutate({
-                              id: q.id,
-                              status: e.target.value,
-                            })
-                          }
-                        />
+
+                      {canEdit(q.status) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          title="Excluir orçamento"
+                          onClick={() => handleDelete(q.id)}
+                          disabled={deleteMut.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       )}
                     </div>
                   </TableCell>
@@ -248,15 +321,16 @@ export function QuotesPage() {
         </Table>
       </div>
 
-      {/* Dialog de criação com SearchSelect */}
-      <Dialog open={open} onOpenChange={(v) => !v && reset()}>
+      <Dialog open={open} onOpenChange={(v) => !v && resetForm()}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Novo Orçamento</DialogTitle>
+            <DialogTitle>
+              {editingQuote ? "Editar Orçamento" : "Novo Orçamento"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              {/* Cliente - AGORA COM SEARCHSELECT */}
+              {/* ✅ Cliente - SEM controle externo */}
               <div className="space-y-2">
                 <Label>Cliente *</Label>
                 <SearchSelect
@@ -266,14 +340,6 @@ export function QuotesPage() {
                   placeholder="Buscar cliente por nome ou documento..."
                   isLoading={clientsLoading}
                 />
-                {selectedClient && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Selecionado:{" "}
-                    <span className="font-medium">{selectedClient.name}</span>
-                    {selectedClient.document && ` • ${selectedClient.document}`}
-                    {selectedClient.email && ` • ${selectedClient.email}`}
-                  </p>
-                )}
               </div>
               <div className="space-y-2">
                 <Label>Válido até</Label>
@@ -284,16 +350,15 @@ export function QuotesPage() {
                 />
               </div>
             </div>
+
+            {/* ✅ Itens - com ProductSearchSelect */}
             <div className="space-y-2">
               <Label>Itens *</Label>
-              <ItemsEditor
-                items={items}
-                onChange={setItems}
-                products={products}
-              />
+              <ItemsEditor items={items} onChange={setItems} />
             </div>
+
             <DialogFooter>
-              <Button variant="outline" onClick={reset}>
+              <Button variant="outline" onClick={resetForm}>
                 Cancelar
               </Button>
               <Button
@@ -301,11 +366,16 @@ export function QuotesPage() {
                   !clientId ||
                   items.length === 0 ||
                   items.some((i) => !i.productId) ||
-                  createMut.isPending
+                  createMut.isPending ||
+                  updateMut.isPending
                 }
                 onClick={submit}
               >
-                {createMut.isPending ? "Criando..." : "Criar Orçamento"}
+                {createMut.isPending || updateMut.isPending
+                  ? "Salvando..."
+                  : editingQuote
+                    ? "Atualizar Orçamento"
+                    : "Criar Orçamento"}
               </Button>
             </DialogFooter>
           </div>

@@ -1,3 +1,4 @@
+// backend/src/validators/client.validator.ts
 import { z } from 'zod';
 
 function validateCpf(cpf: string): boolean {
@@ -68,17 +69,23 @@ function validateDocument(doc: string): boolean {
   return false;
 }
 
+// ✅ CORREÇÃO: Tratar email como opcional e permitir vazio
 export const createClientSchema = z.object({
-  name: z.string().min(2),
+  name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
   document: z.string()
-    .min(11)
-    .max(18)
+    .min(11, 'CPF deve ter 11 dígitos ou CNPJ 14 dígitos')
+    .max(18, 'Documento muito longo')
     .refine(val => {
       const clean = val.replace(/[^\d]/g, '');
       return clean.length === 11 || clean.length === 14;
     }, 'CPF deve ter 11 dígitos ou CNPJ deve ter 14 dígitos')
     .refine(validateDocument, 'CPF/CNPJ inválido'),
-  email: z.string().email('Email inválido').optional().or(z.literal('')),
+  email: z.union([
+    z.string().email('Email inválido'),
+    z.string().max(0), // Aceita string vazia
+    z.null(),
+    z.undefined()
+  ]).optional().transform(val => val || ''),
   phone: z.string().optional(),
   mobile: z.string().optional(),
   birthDate: z.string().datetime().optional(),
@@ -87,13 +94,13 @@ export const createClientSchema = z.object({
   socialMedia: z.record(z.string()).optional(),
   notes: z.string().optional(),
   address: z.object({
-    street: z.string(),
-    number: z.string(),
+    street: z.string().optional(),
+    number: z.string().optional(),
     complement: z.string().optional(),
-    district: z.string(),
-    city: z.string(),
-    state: z.string(),
-    zipCode: z.string(),
+    district: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    zipCode: z.string().optional(),
     country: z.string().default('Brasil')
   }).optional()
 });
