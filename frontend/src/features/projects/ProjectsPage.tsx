@@ -14,6 +14,8 @@ import {
   CheckCircle,
   Upload,
   MoreHorizontal,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import api from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -78,6 +80,8 @@ export function ProjectsPage() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [filesDialogOpen, setFilesDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<any>(null);
   const [clientSearch, setClientSearch] = useState("");
 
   const { data, isLoading } = useQuery({
@@ -168,6 +172,67 @@ export function ProjectsPage() {
     },
   });
 
+  /**
+   * 🔥 MUTATION PARA EDITAR PROJETO
+   */
+  const updateProjectMut = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: ProjectForm }) => {
+      const payload: any = {
+        title: data.title,
+        description: data.description || undefined,
+        clientId: data.clientId,
+        priority: data.priority,
+      };
+
+      if (data.designerId && data.designerId.trim() !== "") {
+        payload.designerId = data.designerId;
+      } else {
+        payload.designerId = null;
+      }
+
+      if (data.dueDate) {
+        payload.dueDate = new Date(data.dueDate + "T12:00:00").toISOString();
+      } else {
+        payload.dueDate = null;
+      }
+
+      const response = await api.put(`/projects/${id}`, payload);
+      return response.data;
+    },
+    onSuccess: () => {
+      toast.success("Projeto atualizado com sucesso! ✅");
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      setEditDialogOpen(false);
+      setEditingProject(null);
+      reset(defaultValues);
+    },
+    onError: (error: any) => {
+      let message = "Erro ao atualizar projeto.";
+      if (error?.response?.data?.error) {
+        message = error.response.data.error;
+      }
+      toast.error(message);
+    },
+  });
+
+  /**
+   * 🔥 MUTATION PARA EXCLUIR PROJETO
+   */
+  const deleteProjectMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/projects/${id}`),
+    onSuccess: () => {
+      toast.success("Projeto excluído com sucesso! 🗑️");
+      qc.invalidateQueries({ queryKey: ["projects"] });
+    },
+    onError: (error: any) => {
+      let message = "Erro ao excluir projeto.";
+      if (error?.response?.data?.error) {
+        message = error.response.data.error;
+      }
+      toast.error(message);
+    },
+  });
+
   const updateStatusMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       api.patch(`/projects/${id}/status`, { status }),
@@ -202,6 +267,39 @@ export function ProjectsPage() {
     setDetailsOpen(true);
   };
 
+  /**
+   * 🔥 ABRIR DIÁLOGO DE EDIÇÃO
+   */
+  const handleEdit = (project: any) => {
+    setEditingProject(project);
+    reset({
+      title: project.title,
+      description: project.description || "",
+      clientId: project.clientId,
+      designerId: project.designerId || "",
+      priority: project.priority || "NORMAL",
+      dueDate: project.dueDate ? project.dueDate.split("T")[0] : "",
+    });
+    setEditDialogOpen(true);
+  };
+
+  /**
+   * 🔥 CONFIRMAR E EXCLUIR PROJETO
+   */
+  const handleDelete = (project: any) => {
+    if (project.status === "COMPLETED") {
+      toast.warning("Projetos concluídos não podem ser excluídos.");
+      return;
+    }
+    if (
+      confirm(
+        `Tem certeza que deseja excluir o projeto "${project.title}"?\n\nTodos os arquivos serão removidos permanentemente.`,
+      )
+    ) {
+      deleteProjectMut.mutate(project.id);
+    }
+  };
+
   const handleComplete = (projectId: string) => {
     if (
       confirm(
@@ -214,6 +312,15 @@ export function ProjectsPage() {
 
   const onSubmit = (data: ProjectForm) => {
     createProjectMut.mutate(data);
+  };
+
+  /**
+   * 🔥 SUBMIT PARA EDIÇÃO
+   */
+  const onEditSubmit = (data: ProjectForm) => {
+    if (editingProject) {
+      updateProjectMut.mutate({ id: editingProject.id, data });
+    }
   };
 
   const projects = data?.data || [];
@@ -356,6 +463,16 @@ export function ProjectsPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            {/* 🔥 EDITAR PROJETO */}
+                            {!isCompleted && !isCancelled && (
+                              <DropdownMenuItem
+                                onClick={() => handleEdit(project)}
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Editar Projeto
+                              </DropdownMenuItem>
+                            )}
+
                             {!isCompleted && !isCancelled && (
                               <>
                                 <DropdownMenuItem
@@ -408,24 +525,40 @@ export function ProjectsPage() {
                                 </DropdownMenuItem>
                               </>
                             )}
-                            <DropdownMenuItem
-                              onClick={() => {
-                                if (
-                                  confirm(
-                                    "Tem certeza que deseja cancelar este projeto?",
-                                  )
-                                ) {
-                                  updateStatusMut.mutate({
-                                    id: project.id,
-                                    status: "CANCELLED",
-                                  });
-                                }
-                              }}
-                              disabled={isCompleted || isCancelled}
-                              className="text-destructive"
-                            >
-                              Cancelar Projeto
-                            </DropdownMenuItem>
+
+                            {/* 🔥 EXCLUIR PROJETO */}
+                            {!isCompleted && !isCancelled && (
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(project)}
+                                className="text-destructive"
+                                disabled={deleteProjectMut.isPending}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                {deleteProjectMut.isPending
+                                  ? "Excluindo..."
+                                  : "Excluir Projeto"}
+                              </DropdownMenuItem>
+                            )}
+
+                            {!isCompleted && !isCancelled && (
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  if (
+                                    confirm(
+                                      "Tem certeza que deseja cancelar este projeto?",
+                                    )
+                                  ) {
+                                    updateStatusMut.mutate({
+                                      id: project.id,
+                                      status: "CANCELLED",
+                                    });
+                                  }
+                                }}
+                                className="text-destructive"
+                              >
+                                Cancelar Projeto
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
@@ -438,7 +571,7 @@ export function ProjectsPage() {
         </Table>
       </div>
 
-      {/* Dialog de Criação de Projeto - SEM PRÉ-LISTA */}
+      {/* Dialog de Criação de Projeto */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -460,7 +593,6 @@ export function ProjectsPage() {
                 )}
               </div>
 
-              {/* Cliente - SEM PRÉ-LISTA */}
               <div className="space-y-2">
                 <Label htmlFor="clientId">Cliente *</Label>
                 <SearchSelect
@@ -483,7 +615,6 @@ export function ProjectsPage() {
                     {errors.clientId.message}
                   </p>
                 )}
-                {/* ✅ REMOVIDO: pré-lista do cliente selecionado */}
               </div>
 
               <div className="space-y-2">
@@ -553,6 +684,134 @@ export function ProjectsPage() {
                   </>
                 ) : (
                   "Criar Projeto"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 🔥 Dialog de EDIÇÃO de Projeto */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar Projeto</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-title">Título do Projeto *</Label>
+                <Input
+                  id="edit-title"
+                  placeholder="Ex: Cartão de visitas - Empresa X"
+                  {...register("title")}
+                />
+                {errors.title && (
+                  <p className="text-xs text-destructive">
+                    {errors.title.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-clientId">Cliente *</Label>
+                <SearchSelect
+                  value={clientIdValue}
+                  onChange={(value) => setValue("clientId", value)}
+                  options={
+                    clients?.map((c: any) => ({
+                      value: c.id,
+                      label: c.name,
+                      subLabel: c.document
+                        ? `CPF/CNPJ: ${c.document}`
+                        : c.email || "",
+                    })) || []
+                  }
+                  placeholder="Buscar cliente por nome ou documento..."
+                  isLoading={clientsLoading}
+                />
+                {errors.clientId && (
+                  <p className="text-xs text-destructive">
+                    {errors.clientId.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-designerId">Designer Responsável</Label>
+                <Select
+                  id="edit-designerId"
+                  placeholder="Selecione um designer..."
+                  options={[
+                    { value: "", label: "— Não atribuir —" },
+                    ...(users
+                      ?.filter(
+                        (u: any) => u.role === "DESIGNER" || u.role === "ADMIN",
+                      )
+                      .map((u: any) => ({
+                        value: u.id,
+                        label: u.name,
+                      })) || []),
+                  ]}
+                  {...register("designerId")}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-priority">Prioridade</Label>
+                  <Select
+                    id="edit-priority"
+                    options={[
+                      { value: "LOW", label: "Baixa" },
+                      { value: "NORMAL", label: "Normal" },
+                      { value: "HIGH", label: "Alta" },
+                      { value: "URGENT", label: "Urgente" },
+                    ]}
+                    {...register("priority")}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-dueDate">Prazo de Entrega</Label>
+                  <Input
+                    id="edit-dueDate"
+                    type="date"
+                    {...register("dueDate")}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-description">Descrição</Label>
+                <Textarea
+                  id="edit-description"
+                  placeholder="Detalhes do projeto, requisitos, observações..."
+                  rows={3}
+                  {...register("description")}
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditDialogOpen(false);
+                  setEditingProject(null);
+                  reset(defaultValues);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={updateProjectMut.isPending}>
+                {updateProjectMut.isPending ? (
+                  <>
+                    <span className="mr-2 h-4 w-4 animate-spin">⟳</span>
+                    Atualizando...
+                  </>
+                ) : (
+                  "Atualizar Projeto"
                 )}
               </Button>
             </DialogFooter>

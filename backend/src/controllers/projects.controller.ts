@@ -1,3 +1,4 @@
+// backend/src/controllers/projects.controller.ts
 import { Response, NextFunction } from 'express';
 import { projectsService } from '../services/projects.service';
 import { AuthRequest } from '../middlewares/auth';
@@ -13,9 +14,6 @@ const getParamId = (value: string | string[] | undefined): string => {
 };
 
 export const projectsController = {
-  /**
-   * Listar projetos com filtros
-   */
   async list(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { page = '1', limit = '20', status, clientId, designerId } = req.query;
@@ -35,9 +33,6 @@ export const projectsController = {
     }
   },
 
-  /**
-   * Buscar projeto por ID com todos os relacionamentos
-   */
   async getById(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const id = getParamId(req.params.id);
@@ -49,9 +44,6 @@ export const projectsController = {
     }
   },
 
-  /**
-   * Criar novo projeto
-   */
   async create(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       console.log('[ProjectsController] create - body:', req.body);
@@ -64,7 +56,6 @@ export const projectsController = {
       
       await logActivity(req.user!.id, 'CREATE_PROJECT', 'Project', project.id, { title: project.title });
 
-      // Notifica o designer se for diferente do criador
       if (project.designerId && project.designerId !== req.user!.id) {
         await notificationsService.create(project.designerId, {
           title: 'Novo projeto atribuído a você',
@@ -74,7 +65,6 @@ export const projectsController = {
         });
       }
 
-      // Notifica a equipe
       await notificationsService.notifyTeam(req.user!.id, {
         title: 'Novo projeto criado',
         message: `"${project.title}" — ${project.client?.name || ''}`,
@@ -82,7 +72,6 @@ export const projectsController = {
         metadata: { entity: 'Project', entityId: project.id, route: '/projects' },
       });
 
-      // Emite via Socket.IO
       req.app.get('io')?.to(`user:${req.user!.id}`).emit('project:created', project);
       
       res.status(201).json(project);
@@ -93,15 +82,24 @@ export const projectsController = {
   },
 
   /**
-   * Atualizar projeto
+   * 🔥 EDITAR PROJETO - Atualiza dados do projeto
    */
   async update(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const id = getParamId(req.params.id);
       const data = updateProjectSchema.parse(req.body);
+      
+      console.log('[ProjectsController] update - project:', id, 'data:', data);
+      
       const project = await projectsService.update(id, data, req.user!.id);
       
-      await logActivity(req.user!.id, 'UPDATE_PROJECT', 'Project', project.id, { title: project.title });
+      await logActivity(req.user!.id, 'UPDATE_PROJECT', 'Project', project.id, { 
+        title: project.title,
+        changes: data 
+      });
+      
+      // Emite via Socket.IO
+      req.app.get('io')?.emit('project:updated', project);
       
       res.json(project);
     } catch (e) { 
@@ -111,14 +109,39 @@ export const projectsController = {
   },
 
   /**
-   * Excluir projeto (soft delete)
+   * 🔥 EXCLUIR PROJETO - Remove o projeto e todos os arquivos
    */
   async delete(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const id = getParamId(req.params.id);
+      
+      console.log('[ProjectsController] delete - project:', id);
+      
+      // Busca o projeto para saber o título antes de excluir
+      const project = await prisma.project.findUnique({
+        where: { id },
+        select: { title: true, status: true }
+      });
+      
+      if (!project) {
+        return res.status(404).json({ error: 'Projeto não encontrado' });
+      }
+      
+      // Verifica se pode excluir
+      if (project.status === 'COMPLETED') {
+        return res.status(400).json({ 
+          error: 'Projetos concluídos não podem ser excluídos. Considere arquivar.' 
+        });
+      }
+      
       await projectsService.delete(id, req.user!.id);
       
-      await logActivity(req.user!.id, 'DELETE_PROJECT', 'Project', id);
+      await logActivity(req.user!.id, 'DELETE_PROJECT', 'Project', id, { 
+        title: project.title 
+      });
+      
+      // Emite via Socket.IO
+      req.app.get('io')?.emit('project:deleted', { projectId: id });
       
       res.status(204).send();
     } catch (e) { 
@@ -127,9 +150,6 @@ export const projectsController = {
     }
   },
 
-  /**
-   * Atualizar status do projeto
-   */
   async updateStatus(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { status } = req.body;
@@ -141,7 +161,6 @@ export const projectsController = {
       
       await logActivity(req.user!.id, 'UPDATE_PROJECT_STATUS', 'Project', project.id, { status });
       
-      // Emite via Socket.IO
       req.app.get('io')?.emit('project:status-changed', project);
       
       res.json(project);
@@ -151,9 +170,6 @@ export const projectsController = {
     }
   },
 
-  /**
-   * Concluir projeto (dar baixa)
-   */
   async completeProject(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const id = getParamId(req.params.id);
@@ -164,7 +180,6 @@ export const projectsController = {
       
       await logActivity(req.user!.id, 'COMPLETE_PROJECT', 'Project', project.id, { title: project.title });
       
-      // Emite via Socket.IO
       req.app.get('io')?.emit('project:completed', project);
       
       res.json(project);
@@ -174,9 +189,6 @@ export const projectsController = {
     }
   },
 
-  /**
-   * Upload de arquivos para o projeto
-   */
   async uploadFiles(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       console.log('[ProjectsController] uploadFiles - projectId:', req.params.id);
@@ -190,7 +202,6 @@ export const projectsController = {
         return res.status(400).json({ error: 'Nenhum arquivo enviado' });
       }
 
-      // Verifica se o projeto existe
       const project = await prisma.project.findUnique({
         where: { id },
         select: { id: true, title: true }
@@ -216,9 +227,6 @@ export const projectsController = {
     }
   },
 
-  /**
-   * Atualizar arquivo do projeto (marcar como final, etc)
-   */
   async updateFile(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const id = getParamId(req.params.id);
@@ -236,9 +244,6 @@ export const projectsController = {
     }
   },
 
-  /**
-   * Excluir arquivo do projeto
-   */
   async deleteFile(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const id = getParamId(req.params.id);
@@ -248,6 +253,8 @@ export const projectsController = {
       
       await projectsService.deleteFile(id, fileId, req.user!.id);
       
+      await logActivity(req.user!.id, 'DELETE_FILE', 'Project', id, { fileId });
+      
       res.status(204).send();
     } catch (e) { 
       console.error('[ProjectsController] deleteFile error:', e);
@@ -255,9 +262,6 @@ export const projectsController = {
     }
   },
 
-  /**
-   * Download de arquivo do projeto
-   */
   async downloadFile(req: AuthRequest, res: Response, next: NextFunction) {
     try {
     const projectId = getParamId(req.params.id);
@@ -271,26 +275,22 @@ export const projectsController = {
         return res.status(404).json({ error: 'Arquivo não encontrado' });
       }
       
-      // Monta o caminho do arquivo
       const uploadDir = process.env.UPLOAD_DIR || './uploads';
       const filePath = path.join(uploadDir, path.basename(file.url));
       
       console.log('[ProjectsController] downloadFile - filePath:', filePath);
       
-      // Verifica se o arquivo existe no sistema
       if (!fs.existsSync(filePath)) {
         console.error('[ProjectsController] downloadFile - arquivo físico não encontrado:', filePath);
         return res.status(404).json({ error: 'Arquivo físico não encontrado' });
       }
       
-      // Configura os headers para download
       const stat = fs.statSync(filePath);
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.name)}"`);
       res.setHeader('Content-Length', stat.size);
       res.setHeader('Cache-Control', 'no-cache');
       
-      // Stream do arquivo
       const fileStream = fs.createReadStream(filePath);
       fileStream.pipe(res);
       
@@ -306,9 +306,6 @@ export const projectsController = {
     }
   },
 
-  /**
-   * Adicionar comentário ao projeto
-   */
   async addComment(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { content, isInternal, parentId } = req.body;
@@ -323,7 +320,6 @@ export const projectsController = {
         userId: req.user!.id,
       });
       
-      // Emite via Socket.IO
       req.app.get('io')?.to(`project:${id}`).emit('project:comment-added', comment);
       
       res.status(201).json(comment);
@@ -333,9 +329,6 @@ export const projectsController = {
     }
   },
 
-  /**
-   * Excluir comentário do projeto
-   */
   async deleteComment(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const id = getParamId(req.params.id);
@@ -352,9 +345,6 @@ export const projectsController = {
     }
   },
 
-  /**
-   * Aprovar projeto (cliente)
-   */
   async approve(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { approvedBy, approvedEmail, signature, notes } = req.body;
@@ -371,7 +361,6 @@ export const projectsController = {
 
       await logActivity(req.user!.id, 'APPROVE_PROJECT', 'Project', id, { approvedBy });
 
-      // Notifica a equipe sobre a aprovação
       await notificationsService.notifyTeam(req.user!.id, {
         title: '✅ Projeto aprovado pelo cliente',
         message: `O projeto foi aprovado por ${approvedBy}. Produção pode ser iniciada.`,
@@ -379,7 +368,6 @@ export const projectsController = {
         metadata: { entity: 'Project', entityId: id, route: '/projects' },
       });
 
-      // Emite via Socket.IO
       req.app.get('io')?.emit('project:approved', { projectId: id, approval });
       
       res.status(201).json(approval);
