@@ -1,6 +1,6 @@
 // backend/src/services/dashboard.service.ts
 import { prisma } from '../config/database';
-import { startOfMonth, subDays, subMonths } from 'date-fns';
+import { startOfMonth, subDays, subMonths, endOfDay } from 'date-fns';
 
 export const dashboardService = {
   async getMetrics() {
@@ -19,8 +19,24 @@ export const dashboardService = {
       prisma.order.count(),
       prisma.client.count(),
       prisma.project.count({ where: { status: { in: ['CREATING', 'AWAITING_APPROVAL', 'PRODUCTION'] } } }),
-      prisma.order.aggregate({ where: { createdAt: { gte: monthStart }, paymentStatus: 'PAID' }, _sum: { total: true } }),
-      prisma.order.aggregate({ where: { createdAt: { gte: lastMonthStart, lt: monthStart }, paymentStatus: 'PAID' }, _sum: { total: true } }),
+      
+      // ✅ CORREÇÃO: Usar createdAt com paymentStatus: 'PAID'
+      prisma.order.aggregate({ 
+        where: { 
+          createdAt: { gte: monthStart, lte: endOfDay(now) }, 
+          paymentStatus: 'PAID' 
+        }, 
+        _sum: { total: true } 
+      }),
+      
+      prisma.order.aggregate({ 
+        where: { 
+          createdAt: { gte: lastMonthStart, lt: monthStart }, 
+          paymentStatus: 'PAID' 
+        }, 
+        _sum: { total: true } 
+      }),
+      
       prisma.order.count({ where: { status: 'BUDGET' } }),
     ]);
 
@@ -37,10 +53,12 @@ export const dashboardService = {
     };
   },
 
-  // ✅ CORREÇÃO: Retornar dados no formato correto
+  // ✅ CORREÇÃO COMPLETA: getMonthlyRevenue usando createdAt com paymentStatus: 'PAID'
   async getMonthlyRevenue(months = 12) {
     try {
-      // Query SQL que retorna dados agregados por mês
+      const now = new Date();
+      const startDate = subMonths(startOfMonth(now), months - 1);
+      
       const results = await prisma.$queryRawUnsafe(`
         SELECT 
           DATE_TRUNC('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo') as month,
@@ -48,17 +66,19 @@ export const dashboardService = {
           COUNT(*)::int as orders
         FROM "Order"
         WHERE "paymentStatus" = 'PAID' 
-          AND "createdAt" >= NOW() - INTERVAL '${months} months'
+          AND "createdAt" >= '${startDate.toISOString()}'
+          AND "createdAt" <= '${endOfDay(now).toISOString()}'
         GROUP BY DATE_TRUNC('month', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')
         ORDER BY month ASC;
       `);
       
-      // ✅ Converter para array de objetos com formato consistente
-      return (results as any[]).map((item: any) => {
-        // Garantir que a data seja um objeto Date
+      // Preencher meses vazios com zero
+      const filledResults = this.fillMissingMonths(results as any[], months, now);
+      
+      return filledResults.map((item: any) => {
         const date = item.month instanceof Date ? item.month : new Date(item.month);
         return {
-          month: date, // Retorna o objeto Date
+          month: date,
           total: Number(item.total) || 0,
           orders: Number(item.orders) || 0
         };
@@ -67,6 +87,34 @@ export const dashboardService = {
       console.error('[Dashboard] Erro no getMonthlyRevenue:', error);
       return [];
     }
+  },
+
+  // ✅ Função auxiliar para preencher meses sem dados
+  fillMissingMonths(data: any[], months: number, now: Date) {
+    const result: any[] = [];
+    const monthMap = new Map();
+    
+    data.forEach(item => {
+      const key = item.month instanceof Date ? item.month.getTime() : new Date(item.month).getTime();
+      monthMap.set(key, item);
+    });
+    
+    for (let i = months - 1; i >= 0; i--) {
+      const date = subMonths(startOfMonth(now), i);
+      const key = date.getTime();
+      
+      if (monthMap.has(key)) {
+        result.push(monthMap.get(key));
+      } else {
+        result.push({
+          month: date,
+          total: 0,
+          orders: 0
+        });
+      }
+    }
+    
+    return result;
   },
 
   async getTopProducts(limit = 10, days = 30) {
@@ -107,7 +155,6 @@ export const dashboardService = {
       by: ['status'], 
       _count: true 
     });
-    
     return results.sort((a, b) => a.status.localeCompare(b.status));
   },
 
@@ -161,14 +208,14 @@ export const dashboardService = {
       }),
       prisma.order.aggregate({
         where: { 
-          createdAt: { gte: startOfMonth },
+          createdAt: { gte: startOfMonth, lte: endOfDay(now) },
           paymentStatus: 'PAID' 
         },
         _sum: { total: true }
       }),
       prisma.order.aggregate({
         where: { 
-          createdAt: { gte: startOfYear },
+          createdAt: { gte: startOfYear, lte: endOfDay(now) },
           paymentStatus: 'PAID' 
         },
         _sum: { total: true }
@@ -226,7 +273,7 @@ export const dashboardService = {
     const [currentMonth, lastMonth] = await Promise.all([
       prisma.order.aggregate({
         where: { 
-          createdAt: { gte: startOfMonth },
+          createdAt: { gte: startOfMonth, lte: endOfDay(now) },
           paymentStatus: 'PAID' 
         },
         _sum: { total: true }

@@ -1,3 +1,4 @@
+// backend/src/services/orders.service.ts
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { productsService } from './products.service';
@@ -152,7 +153,6 @@ export const ordersService = {
     // Se for para produção, deduz estoque de insumos
     if (status === 'IN_PRODUCTION' && existing.status !== 'IN_PRODUCTION') {
       // Busca insumos relacionados aos produtos do pedido
-      // Para este exemplo, vamos buscar por categoria
       const productIds = existing.items.map(i => i.productId);
       const products = await prisma.product.findMany({
         where: { id: { in: productIds } },
@@ -209,6 +209,7 @@ export const ordersService = {
 
   /**
    * Update payment status with automatic financial integration
+   * ✅ CORREÇÃO: Garantir que paidAt seja preenchido
    */
   async updatePaymentStatus(id: string, paymentStatus: string) {
     const existing = await prisma.order.findUnique({
@@ -221,7 +222,7 @@ export const ordersService = {
 
     // Se for PAID, cria transação financeira automaticamente
     if (paymentStatus === 'PAID') {
-      data.paidAt = new Date();
+      data.paidAt = new Date(); // ✅ GARANTIR QUE paidAt SEJA PREENCHIDO
 
       // Cria a transação de receita
       await prisma.$transaction(async (tx) => {
@@ -249,10 +250,13 @@ export const ordersService = {
           });
         }
 
-        // Atualiza o pedido
+        // ✅ Atualiza o pedido com paidAt
         await tx.order.update({
           where: { id },
-          data: { paymentStatus: 'PAID', paidAt: new Date() },
+          data: { 
+            paymentStatus: 'PAID', 
+            paidAt: new Date() // ✅ GARANTIR QUE SEJA PREENCHIDO
+          },
         });
       });
 
@@ -332,5 +336,5 @@ export const ordersService = {
     );
 
     return stats.reverse();
-  },
+  }
 };
