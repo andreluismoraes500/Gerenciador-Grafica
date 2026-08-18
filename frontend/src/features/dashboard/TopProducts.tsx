@@ -1,11 +1,13 @@
 // frontend/src/features/dashboard/TopProducts.tsx
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/api/client";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatCurrency } from "@/lib/utils";
-import { TrendingUp, Package } from "lucide-react";
+import { Package } from "lucide-react";
+import { useState } from "react";
+
+function formatCurrency(value: number) {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
 
 export function TopProducts() {
   const [days, setDays] = useState("30");
@@ -13,97 +15,76 @@ export function TopProducts() {
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard-top-products", days],
     queryFn: () =>
-      api
-        .get(`/dashboard/top-products?limit=5&days=${days}`)
-        .then((r) => r.data),
+      api.get(`/dashboard/top-products?limit=5&days=${days}`).then((r) => r.data),
   });
 
-  if (isLoading)
-    return (
-      <div className="space-y-3">
-        <Skeleton className="h-8 w-32" />
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-14 w-full" />
-        ))}
-      </div>
-    );
+  if (isLoading) return <Skeleton className="h-[220px]" />;
 
-  const maxTotal = data?.length
-    ? Math.max(...data.map((item: any) => item._sum.totalPrice || 0))
-    : 1;
+  const products = Array.isArray(data) ? data : [];
+  const maxTotal = Math.max(...products.map((p: any) => p._sum?.totalPrice || 0), 1);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <Tabs value={days} onValueChange={setDays}>
-          <TabsList className="h-8">
-            <TabsTrigger value="7" className="text-xs px-3 h-7">
-              7d
-            </TabsTrigger>
-            <TabsTrigger value="30" className="text-xs px-3 h-7">
-              30d
-            </TabsTrigger>
-            <TabsTrigger value="90" className="text-xs px-3 h-7">
-              90d
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex gap-1">
+          {["7", "30", "90"].map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
+                days === d
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
         <span className="text-xs text-muted-foreground">
-          {data?.length || 0} produtos
+          {products.length} produto(s)
         </span>
       </div>
 
-      <div className="space-y-2">
-        {(data || []).map((item: any, i: number) => {
-          const total = item._sum.totalPrice || 0;
-          const width = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
-          const colors = [
-            "bg-purple-500",
-            "bg-blue-500",
-            "bg-emerald-500",
-            "bg-amber-500",
-            "bg-rose-500",
-          ];
+      {products.length === 0 ? (
+        <div className="h-[160px] flex flex-col items-center justify-center text-muted-foreground">
+          <Package className="w-8 h-8 mb-2 opacity-30" />
+          <p className="text-sm font-medium">Nenhuma venda no período</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {products.map((item: any, i: number) => {
+            const total = item._sum?.totalPrice || 0;
+            const qty = item._sum?.quantity || 0;
+            const pct = Math.round((total / maxTotal) * 100);
 
-          return (
-            <div key={i} className="group">
-              <div className="flex justify-between items-center text-sm">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs text-muted-foreground font-medium w-4">
-                    {i + 1}
+            return (
+              <div key={item.productId}>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span className="flex items-center gap-2 truncate">
+                    <span className="text-muted-foreground w-4">{i + 1}</span>
+                    <span className="truncate font-medium">
+                      {item.product?.name || "Produto removido"}
+                    </span>
                   </span>
-                  <Package className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                  <span className="truncate font-medium">
-                    {item.product?.name ||
-                      `Produto ${item.productId?.slice(0, 8)}`}
+                  <span className="flex items-center gap-3 shrink-0 text-xs text-muted-foreground">
+                    <span>{qty} un</span>
+                    <span className="font-semibold text-foreground">
+                      {formatCurrency(total)}
+                    </span>
                   </span>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-xs text-muted-foreground">
-                    {item._sum.quantity || 0} un
-                  </span>
-                  <span className="font-semibold text-sm">
-                    {formatCurrency(total)}
-                  </span>
+                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all"
+                    style={{ width: `${pct}%` }}
+                  />
                 </div>
               </div>
-              <div className="w-full h-1.5 bg-muted rounded-full mt-1 overflow-hidden">
-                <div
-                  className={`h-full ${colors[i % colors.length]} rounded-full transition-all duration-700 ease-out`}
-                  style={{ width: `${Math.max(width, 2)}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
-
-        {(!data || data.length === 0) && (
-          <div className="text-sm text-muted-foreground text-center py-8">
-            <TrendingUp className="h-8 w-8 mx-auto opacity-30 mb-2" />
-            Nenhum produto vendido no período
-          </div>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

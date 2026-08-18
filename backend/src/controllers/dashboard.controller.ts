@@ -1,146 +1,100 @@
 // backend/src/controllers/dashboard.controller.ts
-import { Response, NextFunction } from 'express';
-import { format } from 'date-fns';
+import { Request, Response } from 'express';
 import { dashboardService } from '../services/dashboard.service';
-import { AuthRequest } from '../middlewares/auth';
 
 export const dashboardController = {
-  /**
-   * Métricas principais do dashboard
-   */
-  async getMetrics(_req: AuthRequest, res: Response, next: NextFunction) {
+  async getMetrics(req: Request, res: Response) {
     try {
       const metrics = await dashboardService.getMetrics();
       res.json(metrics);
-    } catch (e) { 
-      console.error('[Dashboard] Erro em getMetrics:', e);
-      next(e); 
+    } catch (error) {
+      console.error('[Dashboard] Erro em getMetrics:', error);
+      res.status(500).json({ message: 'Erro ao buscar métricas do dashboard' });
     }
   },
 
-  /**
-   * Dados de faturamento mensal para o gráfico
-   */
-  async getRevenue(req: AuthRequest, res: Response, next: NextFunction) {
+  async getRevenue(req: Request, res: Response) {
     try {
       const months = parseInt(req.query.months as string) || 12;
       const revenue = await dashboardService.getMonthlyRevenue(months);
-      
-      // Formatar os dados para o frontend
-      const formattedRevenue = revenue.map((item: any) => {
-        let monthStr = item.month;
-        if (item.month instanceof Date) {
-          monthStr = format(item.month, 'yyyy-MM-dd');
-        } else if (typeof item.month === 'string' && item.month.includes('T')) {
-          monthStr = item.month.split('T')[0];
-        }
-        
-        return {
-          month: monthStr,
-          total: Number(item.total) || 0,
-          orders: Number(item.orders) || 0
-        };
-      });
-      
-      res.json(formattedRevenue);
-    } catch (e) { 
-      console.error('[Dashboard] Erro em getRevenue:', e);
-      next(e); 
+      res.json(revenue);
+    } catch (error) {
+      console.error('[Dashboard] Erro em getRevenue:', error);
+      res.status(500).json({ message: 'Erro ao buscar faturamento mensal' });
     }
   },
 
-  /**
-   * Top produtos mais vendidos
-   */
-  async getTopProducts(req: AuthRequest, res: Response, next: NextFunction) {
+  async getTopProducts(req: Request, res: Response) {
     try {
       const limit = parseInt(req.query.limit as string) || 10;
       const days = parseInt(req.query.days as string) || 30;
       const products = await dashboardService.getTopProducts(limit, days);
       res.json(products);
-    } catch (e) { 
-      console.error('[Dashboard] Erro em getTopProducts:', e);
-      next(e); 
+    } catch (error) {
+      console.error('[Dashboard] Erro em getTopProducts:', error);
+      res.status(500).json({ message: 'Erro ao buscar produtos mais vendidos' });
     }
   },
 
-  /**
-   * Distribuição de status dos pedidos
-   */
-  async getStatusDistribution(_req: AuthRequest, res: Response, next: NextFunction) {
+  async getStatusDistribution(req: Request, res: Response) {
     try {
       const distribution = await dashboardService.getStatusDistribution();
       res.json(distribution);
-    } catch (e) { 
-      console.error('[Dashboard] Erro em getStatusDistribution:', e);
-      next(e); 
+    } catch (error) {
+      console.error('[Dashboard] Erro em getStatusDistribution:', error);
+      res.status(500).json({ message: 'Erro ao buscar distribuição de status' });
     }
   },
 
-  /**
-   * Atividades recentes
-   */
-  async getRecentActivities(req: AuthRequest, res: Response, next: NextFunction) {
+  async getRecentActivities(req: Request, res: Response) {
     try {
       const limit = parseInt(req.query.limit as string) || 20;
       const activities = await dashboardService.getRecentActivities(limit);
       res.json(activities);
-    } catch (e) { 
-      console.error('[Dashboard] Erro em getRecentActivities:', e);
-      next(e); 
+    } catch (error) {
+      console.error('[Dashboard] Erro em getRecentActivities:', error);
+      res.status(500).json({ message: 'Erro ao buscar atividades recentes' });
     }
   },
 
-  /**
-   * Entregas previstas
-   */
-  async getUpcomingDeliveries(req: AuthRequest, res: Response, next: NextFunction) {
+  async getUpcomingDeliveries(req: Request, res: Response) {
     try {
       const days = parseInt(req.query.days as string) || 7;
       const deliveries = await dashboardService.getUpcomingDeliveries(days);
       res.json(deliveries);
-    } catch (e) { 
-      console.error('[Dashboard] Erro em getUpcomingDeliveries:', e);
-      next(e); 
+    } catch (error) {
+      console.error('[Dashboard] Erro em getUpcomingDeliveries:', error);
+      res.status(500).json({ message: 'Erro ao buscar entregas próximas' });
     }
   },
 
-  /**
-   * Alertas de estoque baixo
-   */
-  async getLowStockAlerts(_req: AuthRequest, res: Response, next: NextFunction) {
+  async getLowStockAlerts(req: Request, res: Response) {
     try {
       const alerts = await dashboardService.getLowStockAlerts();
       res.json(alerts);
-    } catch (e) { 
-      console.error('[Dashboard] Erro em getLowStockAlerts:', e);
-      next(e); 
+    } catch (error) {
+      console.error('[Dashboard] Erro em getLowStockAlerts:', error);
+      res.status(500).json({ message: 'Erro ao buscar alertas de estoque' });
     }
   },
 
-  /**
-   * Métricas avançadas (detalhadas)
-   */
-  async getAdvancedMetrics(_req: AuthRequest, res: Response, next: NextFunction) {
+  async getAdvancedMetrics(req: Request, res: Response) {
     try {
       const metrics = await dashboardService.getAdvancedMetrics();
       res.json(metrics);
-    } catch (e) { 
-      console.error('[Dashboard] Erro em getAdvancedMetrics:', e);
-      next(e); 
+    } catch (error) {
+      console.error('[Dashboard] Erro em getAdvancedMetrics:', error);
+      res.status(500).json({ message: 'Erro ao buscar métricas avançadas' });
     }
   },
 
-  /**
-   * Estatísticas rápidas (hoje, semana)
-   */
-  async getQuickStats(_req: AuthRequest, res: Response, next: NextFunction) {
+  async getQuickStats(req: Request, res: Response) {
     try {
       const stats = await dashboardService.getQuickStats();
       res.json(stats);
-    } catch (e) { 
-      console.error('[Dashboard] Erro em getQuickStats:', e);
-      next(e); 
+    } catch (error) {
+      console.error('[Dashboard] Erro em getQuickStats:', error);
+      res.status(500).json({ message: 'Erro ao buscar estatísticas rápidas' });
     }
-  }
+  },
 };
