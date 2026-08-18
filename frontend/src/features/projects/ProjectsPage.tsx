@@ -1,4 +1,3 @@
-// frontend/src/features/projects/ProjectsPage.tsx
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -50,6 +49,7 @@ import {
 import { ProjectFilesManager } from "@/features/projects/ProjectFilesManager";
 import { ProjectDetailsDialog } from "@/features/projects/ProjectDetailsDialog";
 import { formatDate } from "@/lib/utils";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const projectSchema = z.object({
   title: z.string().min(3, "Título deve ter pelo menos 3 caracteres"),
@@ -73,6 +73,9 @@ const defaultValues: ProjectForm = {
 
 export function ProjectsPage() {
   const qc = useQueryClient();
+  const { permissions } = usePermissions();
+  const canManage = permissions.canManageProjects;
+
   const [search, setSearch] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     null,
@@ -131,6 +134,9 @@ export function ProjectsPage() {
 
   const createProjectMut = useMutation({
     mutationFn: async (data: ProjectForm) => {
+      if (!canManage) {
+        throw new Error("Você não tem permissão para criar projetos.");
+      }
       const payload: any = {
         title: data.title,
         description: data.description || undefined,
@@ -167,16 +173,18 @@ export function ProjectsPage() {
           .join(", ");
       } else if (error?.response?.data?.error) {
         message = error.response.data.error;
+      } else if (error?.message) {
+        message = error.message;
       }
       toast.error(message);
     },
   });
 
-  /**
-   * 🔥 MUTATION PARA EDITAR PROJETO
-   */
   const updateProjectMut = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: ProjectForm }) => {
+      if (!canManage) {
+        throw new Error("Você não tem permissão para editar projetos.");
+      }
       const payload: any = {
         title: data.title,
         description: data.description || undefined,
@@ -210,16 +218,20 @@ export function ProjectsPage() {
       let message = "Erro ao atualizar projeto.";
       if (error?.response?.data?.error) {
         message = error.response.data.error;
+      } else if (error?.message) {
+        message = error.message;
       }
       toast.error(message);
     },
   });
 
-  /**
-   * 🔥 MUTATION PARA EXCLUIR PROJETO
-   */
   const deleteProjectMut = useMutation({
-    mutationFn: (id: string) => api.delete(`/projects/${id}`),
+    mutationFn: (id: string) => {
+      if (!canManage) {
+        throw new Error("Você não tem permissão para excluir projetos.");
+      }
+      return api.delete(`/projects/${id}`);
+    },
     onSuccess: () => {
       toast.success("Projeto excluído com sucesso! 🗑️");
       qc.invalidateQueries({ queryKey: ["projects"] });
@@ -228,14 +240,20 @@ export function ProjectsPage() {
       let message = "Erro ao excluir projeto.";
       if (error?.response?.data?.error) {
         message = error.response.data.error;
+      } else if (error?.message) {
+        message = error.message;
       }
       toast.error(message);
     },
   });
 
   const updateStatusMut = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      api.patch(`/projects/${id}/status`, { status }),
+    mutationFn: ({ id, status }: { id: string; status: string }) => {
+      if (!canManage) {
+        throw new Error("Você não tem permissão para alterar status.");
+      }
+      return api.patch(`/projects/${id}/status`, { status });
+    },
     onSuccess: () => {
       toast.success("Status atualizado!");
       qc.invalidateQueries({ queryKey: ["projects"] });
@@ -246,7 +264,12 @@ export function ProjectsPage() {
   });
 
   const completeProjectMut = useMutation({
-    mutationFn: (id: string) => api.post(`/projects/${id}/complete`),
+    mutationFn: (id: string) => {
+      if (!canManage) {
+        throw new Error("Você não tem permissão para concluir projetos.");
+      }
+      return api.post(`/projects/${id}/complete`);
+    },
     onSuccess: () => {
       toast.success("✅ Projeto concluído com sucesso!");
       qc.invalidateQueries({ queryKey: ["projects"] });
@@ -258,6 +281,10 @@ export function ProjectsPage() {
   });
 
   const handleOpenFiles = (projectId: string) => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para gerenciar arquivos.");
+      return;
+    }
     setSelectedProjectId(projectId);
     setFilesDialogOpen(true);
   };
@@ -267,10 +294,11 @@ export function ProjectsPage() {
     setDetailsOpen(true);
   };
 
-  /**
-   * 🔥 ABRIR DIÁLOGO DE EDIÇÃO
-   */
   const handleEdit = (project: any) => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para editar projetos.");
+      return;
+    }
     setEditingProject(project);
     reset({
       title: project.title,
@@ -283,10 +311,11 @@ export function ProjectsPage() {
     setEditDialogOpen(true);
   };
 
-  /**
-   * 🔥 CONFIRMAR E EXCLUIR PROJETO
-   */
   const handleDelete = (project: any) => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para excluir projetos.");
+      return;
+    }
     if (project.status === "COMPLETED") {
       toast.warning("Projetos concluídos não podem ser excluídos.");
       return;
@@ -301,6 +330,10 @@ export function ProjectsPage() {
   };
 
   const handleComplete = (projectId: string) => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para concluir projetos.");
+      return;
+    }
     if (
       confirm(
         "Tem certeza que deseja dar baixa neste projeto? Isso irá consumir os insumos do estoque.",
@@ -310,13 +343,38 @@ export function ProjectsPage() {
     }
   };
 
+  const handleSendToApproval = (projectId: string, currentStatus: string) => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para alterar status.");
+      return;
+    }
+    if (currentStatus === "CREATING") {
+      updateStatusMut.mutate({ id: projectId, status: "AWAITING_APPROVAL" });
+    } else if (currentStatus === "AWAITING_APPROVAL") {
+      updateStatusMut.mutate({ id: projectId, status: "PRODUCTION" });
+    } else {
+      toast.info(
+        "Este projeto não está em um estado que pode ser enviado para aprovação.",
+      );
+    }
+  };
+
+  const handleCancelProject = (project: any) => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para cancelar projetos.");
+      return;
+    }
+    if (
+      confirm(`Tem certeza que deseja cancelar o projeto "${project.title}"?`)
+    ) {
+      updateStatusMut.mutate({ id: project.id, status: "CANCELLED" });
+    }
+  };
+
   const onSubmit = (data: ProjectForm) => {
     createProjectMut.mutate(data);
   };
 
-  /**
-   * 🔥 SUBMIT PARA EDIÇÃO
-   */
   const onEditSubmit = (data: ProjectForm) => {
     if (editingProject) {
       updateProjectMut.mutate({ id: editingProject.id, data });
@@ -333,6 +391,11 @@ export function ProjectsPage() {
           <p className="text-muted-foreground">
             Gerencie artes, aprovações e produção
           </p>
+          {!canManage && (
+            <p className="text-xs text-muted-foreground mt-1">
+              🔒 Visualização apenas. Contate um administrador para editar.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -344,10 +407,12 @@ export function ProjectsPage() {
               className="w-64 pl-8"
             />
           </div>
-          <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Projeto
-          </Button>
+          {canManage && (
+            <Button onClick={() => setCreateDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Projeto
+            </Button>
+          )}
         </div>
       </div>
 
@@ -379,14 +444,16 @@ export function ProjectsPage() {
                   <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
                     <Inbox className="h-10 w-10 opacity-30" />
                     <p className="text-sm">Nenhum projeto encontrado.</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCreateDialogOpen(true)}
-                    >
-                      <Plus className="mr-2 h-4 w-4" />
-                      Criar primeiro projeto
-                    </Button>
+                    {canManage && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCreateDialogOpen(true)}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Criar primeiro projeto
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -432,21 +499,23 @@ export function ProjectsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2 flex-wrap">
-                        {/* Botão Arquivos */}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-9 px-3 flex items-center gap-1.5"
-                          onClick={() => handleOpenFiles(project.id)}
-                          title="Gerenciar arquivos"
-                        >
-                          <FileUp className="h-4 w-4" />
-                          <span className="text-xs font-medium hidden sm:inline">
-                            Arquivos
-                          </span>
-                        </Button>
+                        {/* Botão Arquivos - apenas quem pode gerenciar */}
+                        {canManage && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-9 px-3 flex items-center gap-1.5"
+                            onClick={() => handleOpenFiles(project.id)}
+                            title="Gerenciar arquivos"
+                          >
+                            <FileUp className="h-4 w-4" />
+                            <span className="text-xs font-medium hidden sm:inline">
+                              Arquivos
+                            </span>
+                          </Button>
+                        )}
 
-                        {/* Botão Detalhes */}
+                        {/* Botão Detalhes - todos podem ver */}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -460,86 +529,63 @@ export function ProjectsPage() {
                           </span>
                         </Button>
 
-                        {/* Menu de opções (mais ações) */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-9 px-3 flex items-center gap-1.5"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                              <span className="text-xs font-medium hidden sm:inline">
-                                Mais
-                              </span>
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {/* 🔥 EDITAR PROJETO */}
-                            {!isCompleted && !isCancelled && (
+                        {/* Menu de opções - apenas quem pode gerenciar */}
+                        {canManage && !isCompleted && !isCancelled && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-9 px-3 flex items-center gap-1.5"
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span className="text-xs font-medium hidden sm:inline">
+                                  Mais
+                                </span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
                               <DropdownMenuItem
                                 onClick={() => handleEdit(project)}
                               >
                                 <Pencil className="mr-2 h-4 w-4" />
                                 Editar Projeto
                               </DropdownMenuItem>
-                            )}
-
-                            {!isCompleted && !isCancelled && (
-                              <>
-                                <DropdownMenuItem
-                                  onClick={() => handleOpenFiles(project.id)}
-                                >
-                                  <FileUp className="mr-2 h-4 w-4" />
-                                  Upload de Arquivos
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    if (project.status === "CREATING") {
-                                      updateStatusMut.mutate({
-                                        id: project.id,
-                                        status: "AWAITING_APPROVAL",
-                                      });
-                                    } else if (
-                                      project.status === "AWAITING_APPROVAL"
-                                    ) {
-                                      updateStatusMut.mutate({
-                                        id: project.id,
-                                        status: "PRODUCTION",
-                                      });
-                                    } else {
-                                      toast.info(
-                                        "Este projeto não está em um estado que pode ser enviado para aprovação.",
-                                      );
-                                    }
-                                  }}
-                                  disabled={
-                                    project.status !== "CREATING" &&
-                                    project.status !== "AWAITING_APPROVAL"
-                                  }
-                                >
-                                  <Upload className="mr-2 h-4 w-4" />
-                                  {project.status === "CREATING"
-                                    ? "Enviar para Aprovação"
-                                    : "Aprovar e Iniciar Produção"}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => handleComplete(project.id)}
-                                  disabled={
-                                    !hasFinalArt || completeProjectMut.isPending
-                                  }
-                                  className="text-green-600"
-                                >
-                                  <CheckCircle className="mr-2 h-4 w-4" />
-                                  {hasFinalArt
-                                    ? "Dar Baixa / Concluir"
-                                    : "⚠️ Marque a Arte Final primeiro"}
-                                </DropdownMenuItem>
-                              </>
-                            )}
-
-                            {/* 🔥 EXCLUIR PROJETO */}
-                            {!isCompleted && !isCancelled && (
+                              <DropdownMenuItem
+                                onClick={() => handleOpenFiles(project.id)}
+                              >
+                                <FileUp className="mr-2 h-4 w-4" />
+                                Upload de Arquivos
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleSendToApproval(
+                                    project.id,
+                                    project.status,
+                                  )
+                                }
+                                disabled={
+                                  project.status !== "CREATING" &&
+                                  project.status !== "AWAITING_APPROVAL"
+                                }
+                              >
+                                <Upload className="mr-2 h-4 w-4" />
+                                {project.status === "CREATING"
+                                  ? "Enviar para Aprovação"
+                                  : "Aprovar e Iniciar Produção"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleComplete(project.id)}
+                                disabled={
+                                  !hasFinalArt || completeProjectMut.isPending
+                                }
+                                className="text-green-600"
+                              >
+                                <CheckCircle className="mr-2 h-4 w-4" />
+                                {hasFinalArt
+                                  ? "Dar Baixa / Concluir"
+                                  : "⚠️ Marque a Arte Final primeiro"}
+                              </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => handleDelete(project)}
                                 className="text-destructive"
@@ -550,29 +596,15 @@ export function ProjectsPage() {
                                   ? "Excluindo..."
                                   : "Excluir Projeto"}
                               </DropdownMenuItem>
-                            )}
-
-                            {!isCompleted && !isCancelled && (
                               <DropdownMenuItem
-                                onClick={() => {
-                                  if (
-                                    confirm(
-                                      "Tem certeza que deseja cancelar este projeto?",
-                                    )
-                                  ) {
-                                    updateStatusMut.mutate({
-                                      id: project.id,
-                                      status: "CANCELLED",
-                                    });
-                                  }
-                                }}
+                                onClick={() => handleCancelProject(project)}
                                 className="text-destructive"
                               >
                                 Cancelar Projeto
                               </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -583,253 +615,265 @@ export function ProjectsPage() {
         </Table>
       </div>
 
-      {/* Dialog de Criação de Projeto */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Novo Projeto</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="title">Título do Projeto *</Label>
-                <Input
-                  id="title"
-                  placeholder="Ex: Cartão de visitas - Empresa X"
-                  {...register("title")}
-                />
-                {errors.title && (
-                  <p className="text-xs text-destructive">
-                    {errors.title.message}
-                  </p>
-                )}
-              </div>
+      {/* Dialog de Criação de Projeto - só aparece se tiver permissão */}
+      {canManage && (
+        <>
+          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Novo Projeto</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Título do Projeto *</Label>
+                    <Input
+                      id="title"
+                      placeholder="Ex: Cartão de visitas - Empresa X"
+                      {...register("title")}
+                    />
+                    {errors.title && (
+                      <p className="text-xs text-destructive">
+                        {errors.title.message}
+                      </p>
+                    )}
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="clientId">Cliente *</Label>
-                <SearchSelect
-                  value={clientIdValue}
-                  onChange={(value) => setValue("clientId", value)}
-                  options={
-                    clients?.map((c: any) => ({
-                      value: c.id,
-                      label: c.name,
-                      subLabel: c.document
-                        ? `CPF/CNPJ: ${c.document}`
-                        : c.email || "",
-                    })) || []
-                  }
-                  placeholder="Buscar cliente por nome ou documento..."
-                  isLoading={clientsLoading}
-                />
-                {errors.clientId && (
-                  <p className="text-xs text-destructive">
-                    {errors.clientId.message}
-                  </p>
-                )}
-              </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="clientId">Cliente *</Label>
+                    <SearchSelect
+                      value={clientIdValue}
+                      onChange={(value) => setValue("clientId", value)}
+                      options={
+                        clients?.map((c: any) => ({
+                          value: c.id,
+                          label: c.name,
+                          subLabel: c.document
+                            ? `CPF/CNPJ: ${c.document}`
+                            : c.email || "",
+                        })) || []
+                      }
+                      placeholder="Buscar cliente por nome ou documento..."
+                      isLoading={clientsLoading}
+                    />
+                    {errors.clientId && (
+                      <p className="text-xs text-destructive">
+                        {errors.clientId.message}
+                      </p>
+                    )}
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="designerId">Designer Responsável</Label>
-                <Select
-                  id="designerId"
-                  placeholder="Selecione um designer..."
-                  options={[
-                    { value: "", label: "— Não atribuir —" },
-                    ...(users
-                      ?.filter(
-                        (u: any) => u.role === "DESIGNER" || u.role === "ADMIN",
-                      )
-                      .map((u: any) => ({
-                        value: u.id,
-                        label: u.name,
-                      })) || []),
-                  ]}
-                  {...register("designerId")}
-                />
-              </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="designerId">Designer Responsável</Label>
+                    <Select
+                      id="designerId"
+                      placeholder="Selecione um designer..."
+                      options={[
+                        { value: "", label: "— Não atribuir —" },
+                        ...(users
+                          ?.filter(
+                            (u: any) =>
+                              u.role === "DESIGNER" || u.role === "ADMIN",
+                          )
+                          .map((u: any) => ({
+                            value: u.id,
+                            label: u.name,
+                          })) || []),
+                      ]}
+                      {...register("designerId")}
+                    />
+                  </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="priority">Prioridade</Label>
-                  <Select
-                    id="priority"
-                    options={[
-                      { value: "LOW", label: "Baixa" },
-                      { value: "NORMAL", label: "Normal" },
-                      { value: "HIGH", label: "Alta" },
-                      { value: "URGENT", label: "Urgente" },
-                    ]}
-                    {...register("priority")}
-                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="priority">Prioridade</Label>
+                      <Select
+                        id="priority"
+                        options={[
+                          { value: "LOW", label: "Baixa" },
+                          { value: "NORMAL", label: "Normal" },
+                          { value: "HIGH", label: "Alta" },
+                          { value: "URGENT", label: "Urgente" },
+                        ]}
+                        {...register("priority")}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="dueDate">Prazo de Entrega</Label>
+                      <Input
+                        id="dueDate"
+                        type="date"
+                        {...register("dueDate")}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Descrição</Label>
+                    <Textarea
+                      id="description"
+                      placeholder="Detalhes do projeto, requisitos, observações..."
+                      rows={3}
+                      {...register("description")}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="dueDate">Prazo de Entrega</Label>
-                  <Input id="dueDate" type="date" {...register("dueDate")} />
+
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setCreateDialogOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button type="submit" disabled={createProjectMut.isPending}>
+                    {createProjectMut.isPending ? (
+                      <>
+                        <span className="mr-2 h-4 w-4 animate-spin">⟳</span>
+                        Criando...
+                      </>
+                    ) : (
+                      "Criar Projeto"
+                    )}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Dialog de EDIÇÃO de Projeto */}
+          <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Editar Projeto</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-title">Título do Projeto *</Label>
+                    <Input
+                      id="edit-title"
+                      placeholder="Ex: Cartão de visitas - Empresa X"
+                      {...register("title")}
+                    />
+                    {errors.title && (
+                      <p className="text-xs text-destructive">
+                        {errors.title.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-clientId">Cliente *</Label>
+                    <SearchSelect
+                      value={clientIdValue}
+                      onChange={(value) => setValue("clientId", value)}
+                      options={
+                        clients?.map((c: any) => ({
+                          value: c.id,
+                          label: c.name,
+                          subLabel: c.document
+                            ? `CPF/CNPJ: ${c.document}`
+                            : c.email || "",
+                        })) || []
+                      }
+                      placeholder="Buscar cliente por nome ou documento..."
+                      isLoading={clientsLoading}
+                    />
+                    {errors.clientId && (
+                      <p className="text-xs text-destructive">
+                        {errors.clientId.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-designerId">
+                      Designer Responsável
+                    </Label>
+                    <Select
+                      id="edit-designerId"
+                      placeholder="Selecione um designer..."
+                      options={[
+                        { value: "", label: "— Não atribuir —" },
+                        ...(users
+                          ?.filter(
+                            (u: any) =>
+                              u.role === "DESIGNER" || u.role === "ADMIN",
+                          )
+                          .map((u: any) => ({
+                            value: u.id,
+                            label: u.name,
+                          })) || []),
+                      ]}
+                      {...register("designerId")}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-priority">Prioridade</Label>
+                      <Select
+                        id="edit-priority"
+                        options={[
+                          { value: "LOW", label: "Baixa" },
+                          { value: "NORMAL", label: "Normal" },
+                          { value: "HIGH", label: "Alta" },
+                          { value: "URGENT", label: "Urgente" },
+                        ]}
+                        {...register("priority")}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-dueDate">Prazo de Entrega</Label>
+                      <Input
+                        id="edit-dueDate"
+                        type="date"
+                        {...register("dueDate")}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-description">Descrição</Label>
+                    <Textarea
+                      id="edit-description"
+                      placeholder="Detalhes do projeto, requisitos, observações..."
+                      rows={3}
+                      {...register("description")}
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="description">Descrição</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Detalhes do projeto, requisitos, observações..."
-                  rows={3}
-                  {...register("description")}
-                />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setCreateDialogOpen(false)}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={createProjectMut.isPending}>
-                {createProjectMut.isPending ? (
-                  <>
-                    <span className="mr-2 h-4 w-4 animate-spin">⟳</span>
-                    Criando...
-                  </>
-                ) : (
-                  "Criar Projeto"
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* 🔥 Dialog de EDIÇÃO de Projeto */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Editar Projeto</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-title">Título do Projeto *</Label>
-                <Input
-                  id="edit-title"
-                  placeholder="Ex: Cartão de visitas - Empresa X"
-                  {...register("title")}
-                />
-                {errors.title && (
-                  <p className="text-xs text-destructive">
-                    {errors.title.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-clientId">Cliente *</Label>
-                <SearchSelect
-                  value={clientIdValue}
-                  onChange={(value) => setValue("clientId", value)}
-                  options={
-                    clients?.map((c: any) => ({
-                      value: c.id,
-                      label: c.name,
-                      subLabel: c.document
-                        ? `CPF/CNPJ: ${c.document}`
-                        : c.email || "",
-                    })) || []
-                  }
-                  placeholder="Buscar cliente por nome ou documento..."
-                  isLoading={clientsLoading}
-                />
-                {errors.clientId && (
-                  <p className="text-xs text-destructive">
-                    {errors.clientId.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-designerId">Designer Responsável</Label>
-                <Select
-                  id="edit-designerId"
-                  placeholder="Selecione um designer..."
-                  options={[
-                    { value: "", label: "— Não atribuir —" },
-                    ...(users
-                      ?.filter(
-                        (u: any) => u.role === "DESIGNER" || u.role === "ADMIN",
-                      )
-                      .map((u: any) => ({
-                        value: u.id,
-                        label: u.name,
-                      })) || []),
-                  ]}
-                  {...register("designerId")}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-priority">Prioridade</Label>
-                  <Select
-                    id="edit-priority"
-                    options={[
-                      { value: "LOW", label: "Baixa" },
-                      { value: "NORMAL", label: "Normal" },
-                      { value: "HIGH", label: "Alta" },
-                      { value: "URGENT", label: "Urgente" },
-                    ]}
-                    {...register("priority")}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-dueDate">Prazo de Entrega</Label>
-                  <Input
-                    id="edit-dueDate"
-                    type="date"
-                    {...register("dueDate")}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-description">Descrição</Label>
-                <Textarea
-                  id="edit-description"
-                  placeholder="Detalhes do projeto, requisitos, observações..."
-                  rows={3}
-                  {...register("description")}
-                />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setEditDialogOpen(false);
-                  setEditingProject(null);
-                  reset(defaultValues);
-                }}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={updateProjectMut.isPending}>
-                {updateProjectMut.isPending ? (
-                  <>
-                    <span className="mr-2 h-4 w-4 animate-spin">⟳</span>
-                    Atualizando...
-                  </>
-                ) : (
-                  "Atualizar Projeto"
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setEditDialogOpen(false);
+                      setEditingProject(null);
+                      reset(defaultValues);
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button type="submit" disabled={updateProjectMut.isPending}>
+                    {updateProjectMut.isPending ? (
+                      <>
+                        <span className="mr-2 h-4 w-4 animate-spin">⟳</span>
+                        Atualizando...
+                      </>
+                    ) : (
+                      "Atualizar Projeto"
+                    )}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
 
       <Dialog open={filesDialogOpen} onOpenChange={setFilesDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
@@ -843,7 +887,7 @@ export function ProjectsPage() {
                 projects.find((p: any) => p.id === selectedProjectId)?.title ||
                 ""
               }
-              isDesigner={true}
+              isDesigner={canManage}
             />
           )}
         </DialogContent>
@@ -854,13 +898,13 @@ export function ProjectsPage() {
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
         onStatusChange={(status) => {
-          if (selectedProjectId) {
+          if (selectedProjectId && canManage) {
             updateStatusMut.mutate({ id: selectedProjectId, status });
           }
         }}
         onComplete={handleComplete}
-        isDesigner={true}
-        isAdmin={true}
+        isDesigner={canManage}
+        isAdmin={permissions.canManageSettings}
       />
     </div>
   );

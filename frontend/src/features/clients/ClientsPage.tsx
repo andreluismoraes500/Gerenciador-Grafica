@@ -35,6 +35,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatCpfCnpj } from "@/lib/utils";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const clientSchema = z.object({
   name: z.string().min(2, "Nome obrigatório"),
@@ -61,10 +62,14 @@ const emptyForm: ClientForm = {
 
 export function ClientsPage() {
   const qc = useQueryClient();
+  const { permissions } = usePermissions();
+  const canManage = permissions.canManageClients;
+
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+
   const { data, isLoading } = useQuery({
     queryKey: ["clients", search, page],
     queryFn: () =>
@@ -75,6 +80,7 @@ export function ClientsPage() {
         .then((r) => r.data),
     placeholderData: (p) => p,
   });
+
   const {
     register,
     handleSubmit,
@@ -84,6 +90,7 @@ export function ClientsPage() {
   } = useForm<ClientForm>({
     resolver: zodResolver(clientSchema),
   });
+
   const save = useMutation({
     mutationFn: async (payload: ClientForm) => {
       if (editing)
@@ -112,6 +119,7 @@ export function ClientsPage() {
       toast.error(msg);
     },
   });
+
   const del = useMutation({
     mutationFn: (id: string) => api.delete(`/clients/${id}`),
     onSuccess: () => {
@@ -121,17 +129,28 @@ export function ClientsPage() {
     onError: (e: any) =>
       toast.error(e?.response?.data?.error || "Erro ao excluir."),
   });
+
   const close = () => {
     setOpen(false);
     setEditing(null);
     reset(emptyForm);
   };
+
   const openNew = () => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para criar clientes.");
+      return;
+    }
     setEditing(null);
     reset(emptyForm);
     setOpen(true);
   };
+
   const openEdit = (row: any) => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para editar clientes.");
+      return;
+    }
     setEditing(row);
     reset({
       name: row.name,
@@ -143,8 +162,20 @@ export function ClientsPage() {
     });
     setOpen(true);
   };
+
+  const handleDelete = (id: string, name: string) => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para excluir clientes.");
+      return;
+    }
+    if (confirm(`Excluir o cliente "${name}"?`)) {
+      del.mutate(id);
+    }
+  };
+
   const rows = data?.data ?? [];
   const totalPages = data?.totalPages ?? 1;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -153,6 +184,11 @@ export function ClientsPage() {
           <p className="text-muted-foreground">
             Sua base de clientes e contatos
           </p>
+          {!canManage && (
+            <p className="text-xs text-muted-foreground mt-1">
+              🔒 Visualização apenas. Contate um administrador para editar.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -167,12 +203,15 @@ export function ClientsPage() {
               className="w-64 pl-8"
             />
           </div>
-          <Button onClick={openNew}>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Cliente
-          </Button>
+          {canManage && (
+            <Button onClick={openNew}>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Cliente
+            </Button>
+          )}
         </div>
       </div>
+
       <div className="rounded-lg border bg-card shadow-sm">
         <Table>
           <TableHeader>
@@ -226,34 +265,36 @@ export function ClientsPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-3">
-                      {/* Botão Editar */}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-9 px-3 flex items-center gap-1.5"
-                        onClick={() => openEdit(row)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                        <span className="text-xs font-medium hidden sm:inline">
-                          Editar
+                      {canManage ? (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-9 px-3 flex items-center gap-1.5"
+                            onClick={() => openEdit(row)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            <span className="text-xs font-medium hidden sm:inline">
+                              Editar
+                            </span>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-9 px-3 flex items-center gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => handleDelete(row.id, row.name)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            <span className="text-xs font-medium hidden sm:inline">
+                              Excluir
+                            </span>
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          Visualização apenas
                         </span>
-                      </Button>
-
-                      {/* Botão Excluir */}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-9 px-3 flex items-center gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => {
-                          if (confirm("Excluir este cliente?"))
-                            del.mutate(row.id);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        <span className="text-xs font-medium hidden sm:inline">
-                          Excluir
-                        </span>
-                      </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -288,89 +329,101 @@ export function ClientsPage() {
           </div>
         </div>
       </div>
-      <Dialog open={open} onOpenChange={(o) => !o && close()}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>
-              {editing ? `Editar: ${editing.name}` : "Novo Cliente"}
-            </DialogTitle>
-          </DialogHeader>
-          <form
-            onSubmit={handleSubmit((v) => save.mutate(v))}
-            className="space-y-4"
-          >
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="sm:col-span-2 space-y-2">
-                <Label>Nome completo *</Label>
-                <Input {...register("name")} placeholder="Ex: João da Silva" />
-                {errors.name && (
-                  <p className="text-xs text-destructive">
-                    {errors.name.message}
-                  </p>
-                )}
+
+      {/* Dialog de criação/edição - só aparece se tiver permissão */}
+      {canManage && (
+        <Dialog open={open} onOpenChange={(o) => !o && close()}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>
+                {editing ? `Editar: ${editing.name}` : "Novo Cliente"}
+              </DialogTitle>
+            </DialogHeader>
+            <form
+              onSubmit={handleSubmit((v) => save.mutate(v))}
+              className="space-y-4"
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2 space-y-2">
+                  <Label>Nome completo *</Label>
+                  <Input
+                    {...register("name")}
+                    placeholder="Ex: João da Silva"
+                  />
+                  {errors.name && (
+                    <p className="text-xs text-destructive">
+                      {errors.name.message}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>CPF/CNPJ *</Label>
+                  <Input
+                    {...register("document", {
+                      onChange: (e) => {
+                        const formatted = formatCpfCnpj(e.target.value);
+                        setValue("document", formatted, {
+                          shouldValidate: true,
+                        });
+                      },
+                    })}
+                    placeholder="000.000.000-00"
+                    maxLength={18}
+                  />
+                  {errors.document && (
+                    <p className="text-xs text-destructive">
+                      {errors.document.message}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    {...register("email")}
+                    placeholder="email@exemplo.com (opcional)"
+                  />
+                  {errors.email && (
+                    <p className="text-xs text-destructive">
+                      {errors.email.message}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>Telefone</Label>
+                  <Input {...register("phone")} placeholder="(00) 0000-0000" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Celular</Label>
+                  <Input
+                    {...register("mobile")}
+                    placeholder="(00) 90000-0000"
+                  />
+                </div>
+                <div className="sm:col-span-2 space-y-2">
+                  <Label>Observações</Label>
+                  <Textarea
+                    {...register("notes")}
+                    placeholder="Notas internas sobre o cliente..."
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>CPF/CNPJ *</Label>
-                <Input
-                  {...register("document", {
-                    onChange: (e) => {
-                      const formatted = formatCpfCnpj(e.target.value);
-                      setValue("document", formatted, { shouldValidate: true });
-                    },
-                  })}
-                  placeholder="000.000.000-00"
-                  maxLength={18}
-                />
-                {errors.document && (
-                  <p className="text-xs text-destructive">
-                    {errors.document.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input
-                  type="email"
-                  {...register("email")}
-                  placeholder="email@exemplo.com (opcional)"
-                />
-                {errors.email && (
-                  <p className="text-xs text-destructive">
-                    {errors.email.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label>Telefone</Label>
-                <Input {...register("phone")} placeholder="(00) 0000-0000" />
-              </div>
-              <div className="space-y-2">
-                <Label>Celular</Label>
-                <Input {...register("mobile")} placeholder="(00) 90000-0000" />
-              </div>
-              <div className="sm:col-span-2 space-y-2">
-                <Label>Observações</Label>
-                <Textarea
-                  {...register("notes")}
-                  placeholder="Notas internas sobre o cliente..."
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={close}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={save.isPending}>
-                {save.isPending
-                  ? "Salvando..."
-                  : editing
-                    ? "Atualizar"
-                    : "Criar Cliente"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={close}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={save.isPending}>
+                  {save.isPending
+                    ? "Salvando..."
+                    : editing
+                      ? "Atualizar"
+                      : "Criar Cliente"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

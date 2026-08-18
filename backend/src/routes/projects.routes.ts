@@ -1,22 +1,24 @@
 import { Router } from 'express';
 import { projectsController } from '../controllers/projects.controller';
-import { requireRole } from '../middlewares/auth';
+import { canViewProjects, canManageProjects } from '../middlewares/auth';
 import { upload } from '../middlewares/upload';
 
 export const projectsRoutes = Router();
 
-projectsRoutes.get('/', projectsController.list);
-projectsRoutes.get('/:id', projectsController.getById);
-projectsRoutes.post('/', requireRole('ADMIN', 'ATTENDANT', 'DESIGNER'), projectsController.create);
-projectsRoutes.put('/:id', requireRole('ADMIN', 'ATTENDANT', 'DESIGNER'), projectsController.update);
-projectsRoutes.delete('/:id', requireRole('ADMIN', 'DESIGNER'), projectsController.delete);
-projectsRoutes.patch('/:id/status', requireRole('ADMIN', 'ATTENDANT', 'DESIGNER'), projectsController.updateStatus);
-projectsRoutes.post('/:id/complete', requireRole('ADMIN', 'ATTENDANT', 'DESIGNER'), projectsController.completeProject);
-projectsRoutes.post('/:id/files', requireRole('ADMIN', 'DESIGNER'), upload.array('files', 10), projectsController.uploadFiles);
-projectsRoutes.patch('/:id/files/:fileId', requireRole('ADMIN', 'DESIGNER'), projectsController.updateFile);
-projectsRoutes.delete('/:id/files/:fileId', requireRole('ADMIN', 'DESIGNER'), projectsController.deleteFile);
-// 🔧 NOVA ROTA: Download de arquivo
-projectsRoutes.get('/:id/files/:fileId/download', projectsController.downloadFile);
-projectsRoutes.post('/:id/comments', projectsController.addComment);
-projectsRoutes.delete('/:id/comments/:commentId', projectsController.deleteComment);
-projectsRoutes.post('/:id/approve', projectsController.approve);
+// Visualização - todos podem ver (incluindo CLIENT)
+projectsRoutes.get('/', canViewProjects, projectsController.list);
+projectsRoutes.get('/:id', canViewProjects, projectsController.getById);
+projectsRoutes.get('/:id/files/:fileId/download', canViewProjects, projectsController.downloadFile);
+
+// Gerenciamento - ADMIN, ATTENDANT e DESIGNER
+projectsRoutes.post('/', canManageProjects, projectsController.create);
+projectsRoutes.put('/:id', canManageProjects, projectsController.update);
+projectsRoutes.delete('/:id', canManageProjects, projectsController.delete);
+projectsRoutes.patch('/:id/status', canManageProjects, projectsController.updateStatus);
+projectsRoutes.post('/:id/complete', canManageProjects, projectsController.completeProject);
+projectsRoutes.post('/:id/files', canManageProjects, upload.array('files', 10), projectsController.uploadFiles);
+projectsRoutes.patch('/:id/files/:fileId', canManageProjects, projectsController.updateFile);
+projectsRoutes.delete('/:id/files/:fileId', canManageProjects, projectsController.deleteFile);
+projectsRoutes.post('/:id/comments', canManageProjects, projectsController.addComment);
+projectsRoutes.delete('/:id/comments/:commentId', canManageProjects, projectsController.deleteComment);
+projectsRoutes.post('/:id/approve', canManageProjects, projectsController.approve);

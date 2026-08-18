@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import { stockItemsController } from '../controllers/stockItems.controller';
-import { requireRole } from '../middlewares/auth';
+import { canViewStock, canManageStock } from '../middlewares/auth';
 
 export const stockItemsRoutes = Router();
-stockItemsRoutes.get('/', requireRole('ADMIN', 'ATTENDANT'), stockItemsController.list);
-stockItemsRoutes.post('/', requireRole('ADMIN', 'ATTENDANT'), stockItemsController.create);
-stockItemsRoutes.put('/:id', requireRole('ADMIN', 'ATTENDANT'), stockItemsController.update);
-stockItemsRoutes.delete('/:id', requireRole('ADMIN'), stockItemsController.delete);
+
+// Visualização - todos podem ver (incluindo DESIGNER)
+stockItemsRoutes.get('/', canViewStock, stockItemsController.list);
+
+// Gerenciamento - apenas ADMIN e ATTENDANT
+stockItemsRoutes.post('/', canManageStock, stockItemsController.create);
+stockItemsRoutes.put('/:id', canManageStock, stockItemsController.update);
+stockItemsRoutes.delete('/:id', canManageStock, stockItemsController.delete);

@@ -1,15 +1,18 @@
 import { Router } from 'express';
 import { clientsController } from '../controllers/clients.controller';
-import { requireRole } from '../middlewares/auth';
+import { canViewClients, canManageClients } from '../middlewares/auth';
 
 export const clientsRoutes = Router();
 
-clientsRoutes.get('/', requireRole('ADMIN', 'ATTENDANT', 'DESIGNER'), clientsController.list);
-clientsRoutes.get('/:id', requireRole('ADMIN', 'ATTENDANT', 'DESIGNER'), clientsController.getById);
-clientsRoutes.post('/', requireRole('ADMIN', 'ATTENDANT'), clientsController.create);
-clientsRoutes.put('/:id', requireRole('ADMIN', 'ATTENDANT'), clientsController.update);
-clientsRoutes.delete('/:id', requireRole('ADMIN'), clientsController.delete);
-clientsRoutes.get('/:id/orders', clientsController.getOrders);
-clientsRoutes.get('/:id/projects', clientsController.getProjects);
-clientsRoutes.get('/:id/quotes', clientsController.getQuotes);
-clientsRoutes.get('/stats/summary', requireRole('ADMIN'), clientsController.getStats);
+// Visualização - todos podem ver
+clientsRoutes.get('/', canViewClients, clientsController.list);
+clientsRoutes.get('/:id', canViewClients, clientsController.getById);
+clientsRoutes.get('/:id/orders', canViewClients, clientsController.getOrders);
+clientsRoutes.get('/:id/projects', canViewClients, clientsController.getProjects);
+clientsRoutes.get('/:id/quotes', canViewClients, clientsController.getQuotes);
+
+// Gerenciamento - apenas ADMIN e ATTENDANT
+clientsRoutes.post('/', canManageClients, clientsController.create);
+clientsRoutes.put('/:id', canManageClients, clientsController.update);
+clientsRoutes.delete('/:id', canManageClients, clientsController.delete);
+clientsRoutes.get('/stats/summary', canManageClients, clientsController.getStats);

@@ -1,2 +1,8 @@
 Email: admin@printflow.com
 Senha: admin123
+
+Usuario Atendente: diego@teste.com
+Senha: 123456
+
+Usuario Designer: rogerio@teste.com
+Senha: 987654

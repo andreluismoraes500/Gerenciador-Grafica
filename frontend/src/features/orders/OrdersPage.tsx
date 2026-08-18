@@ -1,4 +1,3 @@
-// frontend/src/features/orders/OrdersPage.tsx
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -55,6 +54,7 @@ import {
   getStatusLabel,
   getPaymentMethodLabel,
 } from "@/lib/utils";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const STATUSES = [
   "BUDGET",
@@ -67,7 +67,7 @@ const STATUSES = [
 
 const PAYMENT_STATUSES = ["PENDING", "PAID", "REFUNDED", "CANCELLED"];
 
-// 🔍 Componente de Detalhes do Pedido
+// Componente de Detalhes do Pedido
 function OrderDetailsDialog({
   orderId,
   open,
@@ -130,7 +130,7 @@ function OrderDetailsDialog({
               </div>
             </div>
 
-            {/* ✅ Cliente - COM TELEFONE E EMAIL */}
+            {/* Cliente */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -145,8 +145,6 @@ function OrderDetailsDialog({
                     {order.client?.document || "Sem documento"}
                   </p>
                 </div>
-
-                {/* ✅ Email do cliente */}
                 {order.client?.email && (
                   <div className="flex items-center gap-2 text-sm">
                     <Mail className="h-4 w-4 text-muted-foreground" />
@@ -158,8 +156,6 @@ function OrderDetailsDialog({
                     </a>
                   </div>
                 )}
-
-                {/* ✅ Telefone do cliente */}
                 {(order.client?.phone || order.client?.mobile) && (
                   <div className="flex items-center gap-2 text-sm">
                     <Phone className="h-4 w-4 text-muted-foreground" />
@@ -184,8 +180,6 @@ function OrderDetailsDialog({
                     </span>
                   </div>
                 )}
-
-                {/* ✅ Endereço do cliente (se tiver) */}
                 {order.client?.address && (
                   <div className="flex items-start gap-2 text-sm text-muted-foreground mt-1">
                     <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
@@ -370,6 +364,9 @@ function OrderDetailsDialog({
 
 export function OrdersPage() {
   const qc = useQueryClient();
+  const { permissions } = usePermissions();
+  const canManage = permissions.canManageOrders;
+
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -423,6 +420,9 @@ export function OrdersPage() {
       toast.success("Status atualizado!");
       qc.invalidateQueries({ queryKey: ["orders"] });
     },
+    onError: (e: any) => {
+      toast.error(e?.response?.data?.error || "Erro ao atualizar status.");
+    },
   });
 
   const paymentMut = useMutation({
@@ -463,7 +463,11 @@ export function OrdersPage() {
     setPaymentMethod("PIX");
   };
 
-  const submit = () =>
+  const submit = () => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para criar pedidos.");
+      return;
+    }
     createMut.mutate({
       clientId,
       paymentMethod,
@@ -476,11 +480,37 @@ export function OrdersPage() {
         unitPrice: i.unitPrice,
       })),
     });
+  };
 
-  // 🔍 Abrir detalhes do pedido
   const openDetails = (orderId: string) => {
     setSelectedOrderId(orderId);
     setDetailsOpen(true);
+  };
+
+  const handleStatusChange = (id: string, status: string) => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para alterar status.");
+      return;
+    }
+    statusMut.mutate({ id, status });
+  };
+
+  const handlePaymentChange = (id: string, paymentStatus: string) => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para alterar pagamento.");
+      return;
+    }
+    paymentMut.mutate({ id, paymentStatus });
+  };
+
+  const handleMarkAsPaid = (id: string) => {
+    if (!canManage) {
+      toast.error("Você não tem permissão para confirmar pagamento.");
+      return;
+    }
+    if (confirm("Confirmar pagamento deste pedido?")) {
+      paymentMut.mutate({ id, paymentStatus: "PAID" });
+    }
   };
 
   return (
@@ -491,6 +521,11 @@ export function OrdersPage() {
           <p className="text-muted-foreground">
             Fluxo de produção, pagamentos e entregas
           </p>
+          {!canManage && (
+            <p className="text-xs text-muted-foreground mt-1">
+              🔒 Visualização apenas. Contate um administrador para editar.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -502,10 +537,12 @@ export function OrdersPage() {
               className="w-64 pl-8"
             />
           </div>
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Pedido
-          </Button>
+          {canManage && (
+            <Button onClick={() => setOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Pedido
+            </Button>
+          )}
         </div>
       </div>
 
@@ -560,55 +597,51 @@ export function OrdersPage() {
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={o.status} />
-                      <Select
-                        className="h-8 w-36 text-xs"
-                        value={o.status}
-                        options={STATUSES.map((s) => ({
-                          value: s,
-                          label: getStatusLabel(s),
-                        }))}
-                        onChange={(e) =>
-                          statusMut.mutate({ id: o.id, status: e.target.value })
-                        }
-                      />
+                      {canManage && (
+                        <Select
+                          className="h-8 w-36 text-xs"
+                          value={o.status}
+                          options={STATUSES.map((s) => ({
+                            value: s,
+                            label: getStatusLabel(s),
+                          }))}
+                          onChange={(e) =>
+                            handleStatusChange(o.id, e.target.value)
+                          }
+                        />
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={o.paymentStatus} />
-                      {o.paymentStatus === "PENDING" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 text-xs"
-                          onClick={() => {
-                            if (confirm("Confirmar pagamento deste pedido?")) {
-                              paymentMut.mutate({
-                                id: o.id,
-                                paymentStatus: "PAID",
-                              });
+                      {canManage && (
+                        <>
+                          {o.paymentStatus === "PENDING" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => handleMarkAsPaid(o.id)}
+                              disabled={paymentMut.isPending}
+                            >
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Dar baixa
+                            </Button>
+                          )}
+                          <Select
+                            className="h-8 w-32 text-xs"
+                            value={o.paymentStatus}
+                            options={PAYMENT_STATUSES.map((s) => ({
+                              value: s,
+                              label: getStatusLabel(s),
+                            }))}
+                            onChange={(e) =>
+                              handlePaymentChange(o.id, e.target.value)
                             }
-                          }}
-                          disabled={paymentMut.isPending}
-                        >
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Dar baixa
-                        </Button>
+                          />
+                        </>
                       )}
-                      <Select
-                        className="h-8 w-32 text-xs"
-                        value={o.paymentStatus}
-                        options={PAYMENT_STATUSES.map((s) => ({
-                          value: s,
-                          label: getStatusLabel(s),
-                        }))}
-                        onChange={(e) =>
-                          paymentMut.mutate({
-                            id: o.id,
-                            paymentStatus: e.target.value,
-                          })
-                        }
-                      />
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
@@ -632,76 +665,77 @@ export function OrdersPage() {
         </Table>
       </div>
 
-      {/* Dialog de criação */}
-      <Dialog open={open} onOpenChange={(v) => !v && resetForm()}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Novo Pedido</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-2">
-                <Label>Cliente *</Label>
-                <SearchSelect
-                  value={clientId}
-                  onChange={(value) => setClientId(value)}
-                  options={clientOptions}
-                  placeholder="Buscar cliente por nome ou documento..."
-                  isLoading={clientsLoading}
-                />
+      {/* Dialog de criação - só aparece se tiver permissão */}
+      {canManage && (
+        <Dialog open={open} onOpenChange={(v) => !v && resetForm()}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Novo Pedido</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>Cliente *</Label>
+                  <SearchSelect
+                    value={clientId}
+                    onChange={(value) => setClientId(value)}
+                    options={clientOptions}
+                    placeholder="Buscar cliente por nome ou documento..."
+                    isLoading={clientsLoading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Pagamento</Label>
+                  <Select
+                    value={paymentMethod}
+                    options={[
+                      { value: "PIX", label: "Pix" },
+                      { value: "CASH", label: "Dinheiro" },
+                      { value: "CREDIT_CARD", label: "Cartão de Crédito" },
+                      { value: "BOLETO", label: "Boleto" },
+                    ]}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Entrega</Label>
+                  <Input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Pagamento</Label>
-                <Select
-                  value={paymentMethod}
-                  options={[
-                    { value: "PIX", label: "Pix" },
-                    { value: "CASH", label: "Dinheiro" },
-                    { value: "CREDIT_CARD", label: "Cartão de Crédito" },
-                    { value: "BOLETO", label: "Boleto" },
-                  ]}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Entrega</Label>
-                <Input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                />
-              </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label>Itens do pedido *</Label>
-              {productsLoading ? (
-                <Skeleton className="h-32" />
-              ) : (
-                <ItemsEditor items={items} onChange={setItems} />
-              )}
+              <div className="space-y-2">
+                <Label>Itens do pedido *</Label>
+                {productsLoading ? (
+                  <Skeleton className="h-32" />
+                ) : (
+                  <ItemsEditor items={items} onChange={setItems} />
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={resetForm}>
+                  Cancelar
+                </Button>
+                <Button
+                  disabled={
+                    !clientId ||
+                    items.length === 0 ||
+                    items.some((i) => !i.productId) ||
+                    createMut.isPending
+                  }
+                  onClick={submit}
+                >
+                  {createMut.isPending ? "Criando..." : "Criar Pedido"}
+                </Button>
+              </DialogFooter>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={resetForm}>
-                Cancelar
-              </Button>
-              <Button
-                disabled={
-                  !clientId ||
-                  items.length === 0 ||
-                  items.some((i) => !i.productId) ||
-                  createMut.isPending
-                }
-                onClick={submit}
-              >
-                {createMut.isPending ? "Criando..." : "Criar Pedido"}
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
 
-      {/* 🔍 Dialog de Detalhes do Pedido */}
       <OrderDetailsDialog
         orderId={selectedOrderId}
         open={detailsOpen}

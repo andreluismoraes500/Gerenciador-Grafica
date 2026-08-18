@@ -1,14 +1,17 @@
 import { Router } from 'express';
 import { suppliersController } from '../controllers/suppliers.controller';
-import { requireRole } from '../middlewares/auth';
+import { canViewSuppliers, canManageSuppliers } from '../middlewares/auth';
 
 export const suppliersRoutes = Router();
 
-suppliersRoutes.get('/', requireRole('ADMIN', 'ATTENDANT'), suppliersController.list);
-suppliersRoutes.get('/:id', requireRole('ADMIN', 'ATTENDANT'), suppliersController.getById);
-suppliersRoutes.post('/', requireRole('ADMIN', 'ATTENDANT'), suppliersController.create);
-suppliersRoutes.put('/:id', requireRole('ADMIN', 'ATTENDANT'), suppliersController.update);
-suppliersRoutes.delete('/:id', requireRole('ADMIN'), suppliersController.delete);
-suppliersRoutes.get('/:id/purchases', suppliersController.getPurchases);
-suppliersRoutes.post('/:id/purchases', requireRole('ADMIN', 'ATTENDANT'), suppliersController.createPurchase);
-suppliersRoutes.patch('/purchases/:purchaseId/pay', requireRole('ADMIN', 'ATTENDANT'), suppliersController.markPurchaseAsPaid);
+// Visualização - todos podem ver (incluindo DESIGNER)
+suppliersRoutes.get('/', canViewSuppliers, suppliersController.list);
+suppliersRoutes.get('/:id', canViewSuppliers, suppliersController.getById);
+suppliersRoutes.get('/:id/purchases', canViewSuppliers, suppliersController.getPurchases);
+
+// Gerenciamento - apenas ADMIN e ATTENDANT
+suppliersRoutes.post('/', canManageSuppliers, suppliersController.create);
+suppliersRoutes.put('/:id', canManageSuppliers, suppliersController.update);
+suppliersRoutes.delete('/:id', canManageSuppliers, suppliersController.delete);
+suppliersRoutes.post('/:id/purchases', canManageSuppliers, suppliersController.createPurchase);
+suppliersRoutes.patch('/purchases/:purchaseId/pay', canManageSuppliers, suppliersController.markPurchaseAsPaid);

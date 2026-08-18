@@ -15,20 +15,66 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
+import { usePermissions } from "@/hooks/usePermissions";
 
-// 🔥 ORDEM CORRETA PARA UMA GRÁFICA
-const items = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
-  { to: "/clients", icon: Users, label: "Clientes" },
-  { to: "/products", icon: Package, label: "Produtos" },
-  { to: "/quotes", icon: FileText, label: "Orçamentos" },
-  { to: "/orders", icon: ShoppingCart, label: "Pedidos" },
-  { to: "/projects", icon: Palette, label: "Projetos" },
-  { to: "/stock", icon: Box, label: "Insumos" },
-  { to: "/suppliers", icon: Truck, label: "Fornecedores" },
-  { to: "/transactions", icon: Wallet, label: "Financeiro" },
-  { to: "/tasks", icon: CheckSquare, label: "Tarefas" },
-  { to: "/settings", icon: Settings, label: "Configurações" },
+// Definição de cada item com permissão necessária para VISUALIZAR
+const menuItems = [
+  { to: "/", icon: LayoutDashboard, label: "Dashboard", permission: "view" },
+  {
+    to: "/clients",
+    icon: Users,
+    label: "Clientes",
+    permission: "canViewClients",
+  },
+  {
+    to: "/products",
+    icon: Package,
+    label: "Produtos",
+    permission: "canViewProducts",
+  },
+  {
+    to: "/quotes",
+    icon: FileText,
+    label: "Orçamentos",
+    permission: "canViewQuotes",
+  },
+  {
+    to: "/orders",
+    icon: ShoppingCart,
+    label: "Pedidos",
+    permission: "canViewOrders",
+  },
+  {
+    to: "/projects",
+    icon: Palette,
+    label: "Projetos",
+    permission: "canViewProjects",
+  },
+  { to: "/stock", icon: Box, label: "Insumos", permission: "canViewStock" },
+  {
+    to: "/suppliers",
+    icon: Truck,
+    label: "Fornecedores",
+    permission: "canViewSuppliers",
+  },
+  {
+    to: "/transactions",
+    icon: Wallet,
+    label: "Financeiro",
+    permission: "canViewFinance",
+  },
+  {
+    to: "/tasks",
+    icon: CheckSquare,
+    label: "Tarefas",
+    permission: "canManageTasks",
+  },
+  {
+    to: "/settings",
+    icon: Settings,
+    label: "Configurações",
+    permission: "canViewSettings",
+  },
 ];
 
 export function Sidebar({
@@ -38,6 +84,14 @@ export function Sidebar({
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
 }) {
+  const { permissions, isLoading } = usePermissions();
+
+  // Filtra os itens baseado nas permissões
+  const visibleItems = menuItems.filter((item) => {
+    if (item.permission === "view") return true;
+    return (permissions as any)[item.permission] === true;
+  });
+
   return (
     <motion.aside
       animate={{ width: collapsed ? 72 : 260 }}
@@ -59,29 +113,47 @@ export function Sidebar({
       </div>
 
       <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
-        {items.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium",
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-accent text-muted-foreground",
-              )
-            }
-          >
-            <item.icon className="h-5 w-5 flex-shrink-0" />
-            {!collapsed && <span>{item.label}</span>}
-          </NavLink>
-        ))}
+        {isLoading ? (
+          <div className="space-y-2 p-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-10 bg-muted/50 rounded-lg animate-pulse"
+              />
+            ))}
+          </div>
+        ) : (
+          visibleItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to === "/"}
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium",
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-accent text-muted-foreground",
+                )
+              }
+            >
+              <item.icon className="h-5 w-5 flex-shrink-0" />
+              {!collapsed && <span>{item.label}</span>}
+            </NavLink>
+          ))
+        )}
       </nav>
 
       <div className={cn("p-4 border-t border-border", collapsed && "p-2")}>
         {!collapsed && (
-          <div className="text-xs text-muted-foreground">v1.0.0 • © 2026</div>
+          <div className="text-xs text-muted-foreground">
+            {permissions.role && (
+              <span className="block capitalize">
+                {permissions.role.toLowerCase()}
+              </span>
+            )}
+            <span>v1.0.0 • © 2026</span>
+          </div>
         )}
       </div>
     </motion.aside>

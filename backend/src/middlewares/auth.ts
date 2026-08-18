@@ -44,6 +44,7 @@ export const authMiddleware = async (req: AuthRequest, _res: Response, next: Nex
   }
 };
 
+// Permissões baseadas em roles
 export const requireRole = (...roles: string[]) => {
   return (req: AuthRequest, _res: Response, next: NextFunction) => {
     if (!req.user) {
@@ -55,3 +56,44 @@ export const requireRole = (...roles: string[]) => {
     next();
   };
 };
+
+// Permissões específicas para cada funcionalidade
+
+// CLIENTES: ADMIN e ATTENDANT podem criar/editar/excluir, DESIGNER só visualiza
+export const canManageClients = requireRole('ADMIN', 'ATTENDANT');
+export const canViewClients = requireRole('ADMIN', 'ATTENDANT', 'DESIGNER');
+
+// PRODUTOS: ADMIN e ATTENDANT podem criar/editar/excluir, DESIGNER só visualiza
+export const canManageProducts = requireRole('ADMIN', 'ATTENDANT');
+export const canViewProducts = requireRole('ADMIN', 'ATTENDANT', 'DESIGNER');
+
+// ORÇAMENTOS: ADMIN e ATTENDANT podem criar/editar/excluir, DESIGNER só visualiza
+export const canManageQuotes = requireRole('ADMIN', 'ATTENDANT');
+export const canViewQuotes = requireRole('ADMIN', 'ATTENDANT', 'DESIGNER');
+
+// PEDIDOS: ADMIN e ATTENDANT podem criar/editar/excluir, DESIGNER só visualiza
+export const canManageOrders = requireRole('ADMIN', 'ATTENDANT');
+export const canViewOrders = requireRole('ADMIN', 'ATTENDANT', 'DESIGNER');
+
+// PROJETOS: ADMIN, DESIGNER e ATTENDANT podem gerenciar, CLIENT só visualiza próprios
+export const canManageProjects = requireRole('ADMIN', 'ATTENDANT', 'DESIGNER');
+export const canViewProjects = requireRole('ADMIN', 'ATTENDANT', 'DESIGNER', 'CLIENT');
+
+// INSUMOS: ADMIN e ATTENDANT podem gerenciar, DESIGNER só visualiza
+export const canManageStock = requireRole('ADMIN', 'ATTENDANT');
+export const canViewStock = requireRole('ADMIN', 'ATTENDANT', 'DESIGNER');
+
+// FORNECEDORES: ADMIN e ATTENDANT podem gerenciar, DESIGNER só visualiza
+export const canManageSuppliers = requireRole('ADMIN', 'ATTENDANT');
+export const canViewSuppliers = requireRole('ADMIN', 'ATTENDANT', 'DESIGNER');
+
+// FINANCEIRO: ADMIN pode tudo, ATTENDANT visualiza, DESIGNER não acessa
+export const canManageFinance = requireRole('ADMIN');
+export const canViewFinance = requireRole('ADMIN', 'ATTENDANT');
+
+// TAREFAS: ADMIN, ATTENDANT e DESIGNER podem gerenciar
+export const canManageTasks = requireRole('ADMIN', 'ATTENDANT', 'DESIGNER');
+
+// CONFIGURAÇÕES: apenas ADMIN
+export const canManageSettings = requireRole('ADMIN');
+export const canViewSettings = requireRole('ADMIN', 'DESIGNER');
