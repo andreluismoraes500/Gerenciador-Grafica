@@ -1,5 +1,4 @@
 // backend/src/controllers/kits.controller.ts
-
 import { Response, NextFunction } from 'express';
 import { kitsService } from '../services/kits.service';
 import { AuthRequest } from '../middlewares/auth';
@@ -59,7 +58,6 @@ export const kitsController = {
                 productCount: kit.productCount,
             });
 
-            // Notifica equipe sobre novo kit
             await notificationsService.notifyTeam(req.user!.id, {
                 title: '📦 Novo kit criado',
                 message: `Kit "${kit.name}" com ${kit.productCount} produto(s) — R$ ${kit.price.toFixed(2)}`,
@@ -158,12 +156,14 @@ export const kitsController = {
     },
 
     /**
-     * Produtos disponíveis para kits
+     * ✅ Produtos disponíveis para kits - CORRIGIDO
      */
     async getAvailableProducts(req: AuthRequest, res: Response, next: NextFunction) {
         try {
+            console.log('[kits.controller] getAvailableProducts - query:', req.query);
             const { search } = req.query;
             const products = await kitsService.getAvailableProducts(search as string);
+            console.log('[kits.controller] getAvailableProducts - retornando', products.length, 'produtos');
             res.json(products);
         } catch (e) {
             console.error('[kits.controller] getAvailableProducts error:', e);

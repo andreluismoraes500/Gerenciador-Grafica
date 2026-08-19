@@ -96,7 +96,7 @@ export const productsController = {
     }
   },
 
-  async getLowStock(req: AuthRequest, res: Response, next: NextFunction) {
+  async getLowStock(_req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const products = await productsService.getLowStock();
       res.json(products);

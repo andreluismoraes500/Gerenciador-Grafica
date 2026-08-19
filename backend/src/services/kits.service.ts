@@ -1,5 +1,4 @@
 // backend/src/services/kits.service.ts
-
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 
@@ -11,7 +10,7 @@ interface KitItemInput {
 interface CreateKitData {
     name: string;
     description?: string;
-    price?: number; // Se não informado, calcula automaticamente
+    price?: number;
     isActive?: boolean;
     items: KitItemInput[];
 }
@@ -60,7 +59,6 @@ export const kitsService = {
             prisma.kit.count({ where }),
         ]);
 
-        // Formata os itens para exibição
         const formattedData = data.map(kit => ({
             ...kit,
             totalItems: kit.items.reduce((sum, item) => sum + item.quantity, 0),
@@ -95,7 +93,6 @@ export const kitsService = {
             throw new AppError('Kit não encontrado', 404);
         }
 
-        // Calcula o preço total dos itens
         const itemsTotal = kit.items.reduce(
             (sum, item) => sum + (item.product.salePrice * item.quantity),
             0
@@ -117,7 +114,6 @@ export const kitsService = {
             throw new AppError('Adicione pelo menos um produto ao kit', 400);
         }
 
-        // Verifica se os produtos existem e estão ativos
         const productIds = data.items.map(item => item.productId);
         const products = await prisma.product.findMany({
             where: { 
@@ -130,7 +126,6 @@ export const kitsService = {
             throw new AppError('Um ou mais produtos não foram encontrados ou estão inativos', 400);
         }
 
-        // Calcula o preço do kit com base nos produtos
         let calculatedPrice = 0;
         const productMap = new Map(products.map(p => [p.id, p]));
         
@@ -140,10 +135,8 @@ export const kitsService = {
             calculatedPrice += product.salePrice * item.quantity;
         }
 
-        // Usa o preço informado ou o calculado
         const finalPrice = data.price !== undefined ? data.price : calculatedPrice;
 
-        // Cria o kit com transação
         const kit = await prisma.$transaction(async (tx) => {
             const createdKit = await tx.kit.create({
                 data: {
@@ -154,7 +147,6 @@ export const kitsService = {
                 },
             });
 
-            // Cria os itens do kit
             await tx.kitItem.createMany({
                 data: data.items.map(item => ({
                     kitId: createdKit.id,
@@ -166,7 +158,6 @@ export const kitsService = {
             return createdKit;
         });
 
-        // Busca o kit completo com os itens
         return this.getById(kit.id);
     },
 
@@ -183,7 +174,6 @@ export const kitsService = {
             throw new AppError('Kit não encontrado', 404);
         }
 
-        // Se for desativar, verifica se há pedidos usando o kit
         if (data.isActive === false) {
             const usedInOrders = await prisma.orderItem.findFirst({
                 where: {
@@ -205,11 +195,9 @@ export const kitsService = {
             }
         }
 
-        // Se os itens foram alterados, recalcula o preço
         let finalPrice = data.price;
 
         if (data.items && data.items.length > 0) {
-            // Verifica os produtos
             const productIds = data.items.map(item => item.productId);
             const products = await prisma.product.findMany({
                 where: { id: { in: productIds }, isActive: true },
@@ -219,7 +207,6 @@ export const kitsService = {
                 throw new AppError('Um ou mais produtos não foram encontrados', 400);
             }
 
-            // Calcula novo preço
             let calculatedPrice = 0;
             const productMap = new Map(products.map(p => [p.id, p]));
             
@@ -233,9 +220,7 @@ export const kitsService = {
             finalPrice = data.price !== undefined ? data.price : calculatedPrice;
         }
 
-        // Atualiza com transação
         const updatedKit = await prisma.$transaction(async (tx) => {
-            // Atualiza dados principais
             const kit = await tx.kit.update({
                 where: { id },
                 data: {
@@ -246,14 +231,11 @@ export const kitsService = {
                 },
             });
 
-            // Se os itens foram fornecidos, atualiza
             if (data.items && data.items.length > 0) {
-                // Remove itens antigos
                 await tx.kitItem.deleteMany({
                     where: { kitId: id },
                 });
 
-                // Cria novos itens
                 await tx.kitItem.createMany({
                     data: data.items.map(item => ({
                         kitId: id,
@@ -270,7 +252,7 @@ export const kitsService = {
     },
 
     /**
-     * Excluir kit (apenas se não estiver em uso)
+     * Excluir kit
      */
     async delete(id: string) {
         const existing = await prisma.kit.findUnique({
@@ -282,7 +264,6 @@ export const kitsService = {
             throw new AppError('Kit não encontrado', 404);
         }
 
-        // Verifica se está sendo usado em pedidos
         const usedInOrders = await prisma.orderItem.findFirst({
             where: {
                 product: {
@@ -296,7 +277,6 @@ export const kitsService = {
         });
 
         if (usedInOrders) {
-            // Em vez de excluir, desativa
             await prisma.kit.update({
                 where: { id },
                 data: { isActive: false },
@@ -312,7 +292,7 @@ export const kitsService = {
     },
 
     /**
-     * Calcular preço de um kit baseado nos produtos
+     * Calcular preço de um kit
      */
     async calculatePrice(kitId: string) {
         const kit = await prisma.kit.findUnique({
@@ -350,7 +330,7 @@ export const kitsService = {
     },
 
     /**
-     * Verificar disponibilidade de estoque para um kit
+     * Verificar disponibilidade de estoque
      */
     async checkAvailability(kitId: string, quantity: number = 1) {
         const kit = await prisma.kit.findUnique({
@@ -417,10 +397,11 @@ export const kitsService = {
     },
 
     /**
-     * Buscar produtos que podem ser adicionados a kits
-     * (apenas produtos ativos e que não estão em kits com limite)
+     * ✅ Buscar produtos disponíveis para kits - CORRIGIDO
      */
     async getAvailableProducts(search?: string) {
+        console.log('[kits.service] getAvailableProducts - search:', search);
+        
         const where: any = { isActive: true };
         if (search) {
             where.OR = [
@@ -429,7 +410,7 @@ export const kitsService = {
             ];
         }
 
-        return prisma.product.findMany({
+        const products = await prisma.product.findMany({
             where,
             select: {
                 id: true,
@@ -442,5 +423,8 @@ export const kitsService = {
             orderBy: { name: 'asc' },
             take: 50,
         });
+
+        console.log('[kits.service] getAvailableProducts - encontrados:', products.length);
+        return products;
     },
 };
