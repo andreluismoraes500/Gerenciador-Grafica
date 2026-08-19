@@ -11,9 +11,6 @@ const getParamId = (value: string | string[] | undefined): string => {
 };
 
 export const purchasesController = {
-    /**
-     * Listar compras
-     */
     async list(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const { page = '1', limit = '20', status, supplierId, search } = req.query;
@@ -31,9 +28,6 @@ export const purchasesController = {
         }
     },
 
-    /**
-     * Buscar compra por ID
-     */
     async getById(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const id = getParamId(req.params.id);
@@ -45,14 +39,15 @@ export const purchasesController = {
         }
     },
 
-    /**
-     * Criar compra
-     */
     async create(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             console.log('[purchases.controller] create - body:', req.body);
             
             const purchase = await purchasesService.create(req.body);
+
+            if (!purchase) {
+                return res.status(500).json({ error: 'Não foi possível criar a compra' });
+            }
             
             await logActivity(req.user!.id, 'CREATE_PURCHASE', 'Purchase', purchase.id, {
                 code: purchase.code,
@@ -60,7 +55,6 @@ export const purchasesController = {
                 total: purchase.total,
             });
 
-            // Notifica equipe sobre nova compra
             await notificationsService.notifyTeam(req.user!.id, {
                 title: '🛒 Nova compra criada',
                 message: `Compra ${purchase.code} — ${purchase.supplier.name} — R$ ${purchase.total.toFixed(2)}`,
@@ -75,9 +69,6 @@ export const purchasesController = {
         }
     },
 
-    /**
-     * Atualizar compra
-     */
     async update(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const id = getParamId(req.params.id);
@@ -95,9 +86,6 @@ export const purchasesController = {
         }
     },
 
-    /**
-     * Atualizar status da compra
-     */
     async updateStatus(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const id = getParamId(req.params.id);
@@ -109,26 +97,24 @@ export const purchasesController = {
 
             const purchase = await purchasesService.updateStatus(id, status);
 
-            if (purchase) {
-                await logActivity(req.user!.id, 'UPDATE_PURCHASE_STATUS', 'Purchase', purchase.id, {
-                    code: purchase.code,
-                    status,
-                });
+            if (!purchase) {
+                return res.status(500).json({ error: 'Não foi possível atualizar o status da compra' });
             }
 
-            // Emite via Socket.IO
+            await logActivity(req.user!.id, 'UPDATE_PURCHASE_STATUS', 'Purchase', purchase.id, {
+                code: purchase.code,
+                status,
+            });
+
             req.app.get('io')?.emit('purchase:status-changed', purchase);
 
-            return res.json(purchase);
+            res.json(purchase);
         } catch (e) {
             console.error('[purchases.controller] updateStatus error:', e);
-            return next(e);
+            next(e);
         }
     },
 
-    /**
-     * Excluir compra
-     */
     async delete(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const id = getParamId(req.params.id);
@@ -143,10 +129,7 @@ export const purchasesController = {
         }
     },
 
-    /**
-     * Estatísticas de compras
-     */
-    async getStats(_req: AuthRequest, res: Response, next: NextFunction) {
+    async getStats(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             const stats = await purchasesService.getStats();
             res.json(stats);

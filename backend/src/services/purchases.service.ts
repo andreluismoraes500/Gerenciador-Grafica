@@ -61,7 +61,6 @@ export const purchasesService = {
             prisma.purchase.count({ where }),
         ]);
 
-        // Formata os itens para exibição
         const formattedData = data.map(purchase => ({
             ...purchase,
             items: purchase.items as unknown as PurchaseItem[],
@@ -127,7 +126,8 @@ export const purchasesService = {
 
         // Calcula subtotal e total
         const subtotal = data.items.reduce((sum, item) => sum + item.total, 0);
-        const total = subtotal - (data.discount || 0);
+        const discount = data.discount || 0;
+        const total = subtotal - discount;
 
         const code = await generatePurchaseCode();
 
@@ -137,13 +137,11 @@ export const purchasesService = {
                 supplierId: data.supplierId,
                 items: data.items as any,
                 subtotal,
-                discount: data.discount || 0,
+                discount,
                 total,
                 dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
                 notes: data.notes,
-                status: data.status === 'DRAFT' || data.status === 'RECEIVED'
-                    ? undefined
-                    : data.status,
+                status: data.status || 'DRAFT',
             },
             include: {
                 supplier: true,
@@ -159,7 +157,7 @@ export const purchasesService = {
                     description: `Compra ${purchase.code} - ${supplier.name}`,
                     amount: purchase.total,
                     dueDate: purchase.dueDate || new Date(),
-                    status: purchase.status === 'PAID' ? 'PAID' : 'PENDING',
+                    status: data.status === 'PAID' ? 'PAID' : 'PENDING',
                     supplierId: supplier.id,
                 },
             });
@@ -182,7 +180,7 @@ export const purchasesService = {
         }
 
         // Se já foi recebida ou paga, não pode mais editar
-        if (existing.status === 'RECEIVED' as any || existing.status === 'PAID' as any) {
+        if (existing.status === 'RECEIVED' || existing.status === 'PAID') {
             throw new AppError('Compras recebidas ou pagas não podem ser editadas', 400);
         }
 
@@ -190,18 +188,19 @@ export const purchasesService = {
 
         if (data.items) {
             const subtotal = data.items.reduce((sum, item) => sum + item.total, 0);
-            const total = subtotal - (data.discount !== undefined ? data.discount : 0);
+            const discount = data.discount !== undefined ? data.discount : (existing.discount || 0);
+            const total = subtotal - discount;
 
             updateData.items = data.items as any;
             updateData.subtotal = subtotal;
+            updateData.discount = discount;
             updateData.total = total;
         }
 
         if (data.discount !== undefined) {
-            updateData.discount = data.discount;
-            // Recalcula total
             const items = (data.items || existing.items) as PurchaseItem[];
             const subtotal = items.reduce((sum, item) => sum + item.total, 0);
+            updateData.discount = data.discount;
             updateData.total = subtotal - data.discount;
         }
 
@@ -255,7 +254,7 @@ export const purchasesService = {
                         where: { id: item.stockItemId },
                         data: {
                             quantity: { increment: item.quantity },
-                            unitCost: item.unitPrice, // Atualiza custo médio
+                            unitCost: item.unitPrice,
                         },
                     });
                 }
@@ -263,7 +262,7 @@ export const purchasesService = {
                 // Atualiza status da compra
                 await tx.purchase.update({
                     where: { id },
-                    data: { status: status as typeof existing.status },
+                    data: { status: 'RECEIVED' },
                 });
 
                 // Cria transação de despesa se ainda não existir
@@ -308,7 +307,6 @@ export const purchasesService = {
                     data: { status: 'PAID', paidAt: new Date() },
                 });
 
-                // Atualiza ou cria transação
                 const transaction = await tx.transaction.findFirst({
                     where: {
                         supplierId: existing.supplierId,
@@ -366,7 +364,7 @@ export const purchasesService = {
             throw new AppError('Compra não encontrada', 404);
         }
 
-        if (existing.status !== ('DRAFT' as any)) {
+        if (existing.status !== 'DRAFT') {
             throw new AppError('Apenas compras em rascunho podem ser excluídas', 400);
         }
 
@@ -377,10 +375,11 @@ export const purchasesService = {
      * Estatísticas de compras
      */
     async getStats() {
-        const [total, pending, paid, totalValue] = await Promise.all([
+        const [total, pending, paid, received, totalValue] = await Promise.all([
             prisma.purchase.count(),
             prisma.purchase.count({ where: { status: 'PENDING' } }),
             prisma.purchase.count({ where: { status: 'PAID' } }),
+            prisma.purchase.count({ where: { status: 'RECEIVED' } }),
             prisma.purchase.aggregate({
                 where: { status: 'PAID' },
                 _sum: { total: true },
@@ -391,6 +390,7 @@ export const purchasesService = {
             total,
             pending,
             paid,
+            received,
             totalValue: totalValue._sum.total || 0,
         };
     },

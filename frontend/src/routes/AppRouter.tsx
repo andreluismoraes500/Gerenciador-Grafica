@@ -1,3 +1,5 @@
+// frontend/src/routes/AppRouter.tsx
+
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { useAuthStore } from "@/store/auth.store";
@@ -8,6 +10,7 @@ import { RegisterPage } from "@/features/auth/RegisterPage";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { ClientsPage } from "@/features/clients/ClientsPage";
 import { ProductsPage } from "@/features/products/ProductsPage";
+import { KitsPage } from "@/features/kits/KitsPage"; // ✅ IMPORTAR
 import { QuotesPage } from "@/features/quotes/QuotesPage";
 import { OrdersPage } from "@/features/orders/OrdersPage";
 import { ProjectsPage } from "@/features/projects/ProjectsPage";
@@ -44,10 +47,10 @@ export default function AppRouter() {
             </ProtectedRoute>
           }
         >
-          {/* 🔥 ORDEM CORRETA PARA UMA GRÁFICA */}
           <Route path="/" element={<DashboardPage />} />
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/products" element={<ProductsPage />} />
+          <Route path="/kits" element={<KitsPage />} /> {/* ✅ ADICIONAR */}
           <Route path="/quotes" element={<QuotesPage />} />
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/projects" element={<ProjectsPage />} />

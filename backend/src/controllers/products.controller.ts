@@ -53,12 +53,15 @@ export const productsController = {
     } catch (e) { next(e); }
   },
 
-  async listCategories(_req: AuthRequest, res: Response, next: NextFunction) {
-    try {
-      const categories = await productsService.listCategories();
-      res.json(categories);
-    } catch (e) { next(e); }
-  },
+async listCategories(_req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const categories = await productsService.listCategories();
+    res.json(categories);
+  } catch (e) { 
+    console.error('[products.controller] listCategories error:', e);
+    next(e); 
+  }
+},
 
   async createCategory(req: AuthRequest, res: Response, next: NextFunction) {
     try {

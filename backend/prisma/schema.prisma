@@ -78,8 +78,10 @@ enum QuoteStatus {
 }
 
 enum PurchaseStatus {
+    DRAFT
     PENDING
     PAID
+    RECEIVED
     CANCELLED
 }
 
@@ -432,16 +434,21 @@ model Supplier {
 }
 
 model Purchase {
-    id         String         @id @default(cuid())
-    code       String         @unique
-    supplierId String
-    supplier   Supplier       @relation(fields: [supplierId], references: [id])
-    items      Json // [{name, quantity, unitPrice}]
-    total      Float
-    status     PurchaseStatus @default(PENDING)
-    dueDate    DateTime?
-    paidAt     DateTime?
-    createdAt  DateTime       @default(now())
+    id           String         @id @default(cuid())
+    code         String         @unique
+    supplierId   String
+    supplier     Supplier       @relation(fields: [supplierId], references: [id])
+    items        Json
+    subtotal     Float          @default(0)
+    discount     Float          @default(0)
+    total        Float
+    status       PurchaseStatus @default(DRAFT)
+    dueDate      DateTime?
+    paidAt       DateTime?
+    notes        String?
+    createdAt    DateTime       @default(now())
+    updatedAt    DateTime       @updatedAt
+    transactions Transaction[]
 }
 
 // ---------- TASKS ----------
@@ -521,23 +528,22 @@ enum ProductionStep {
 model Transaction {
     id          String            @id @default(cuid())
     type        TransactionType
-    category    String // Ex: "Venda de Pedido", "Compra de Papel", "Impostos"
+    category    String
     description String?
     amount      Float
     dueDate     DateTime
     paidAt      DateTime?
     status      TransactionStatus @default(PENDING)
-
-    // Vínculos opcionais
-    orderId    String?
-    order      Order?    @relation(fields: [orderId], references: [id])
-    supplierId String?
-    supplier   Supplier? @relation(fields: [supplierId], references: [id])
-    clientId   String?
-    client     Client?   @relation(fields: [clientId], references: [id])
-
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+    orderId     String?
+    order       Order?            @relation(fields: [orderId], references: [id])
+    supplierId  String?
+    supplier    Supplier?         @relation(fields: [supplierId], references: [id])
+    clientId    String?
+    client      Client?           @relation(fields: [clientId], references: [id])
+    createdAt   DateTime          @default(now())
+    updatedAt   DateTime          @updatedAt
+    purchase    Purchase?         @relation(fields: [purchaseId], references: [id])
+    purchaseId  String?
 
     @@index([dueDate])
     @@index([status])

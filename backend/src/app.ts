@@ -25,6 +25,7 @@ import { notificationsRoutes } from './routes/notifications.routes';
 import { transactionsRoutes } from './routes/transactions.routes';
 import { stockItemsRoutes } from './routes/stockItems.routes';
 import { purchasesRoutes } from './routes/purchases.routes';
+import { kitsRoutes } from './routes/kits.routes';
 
 import { errorHandler } from './middlewares/errorHandler';
 import { authMiddleware } from './middlewares/auth';
@@ -166,6 +167,8 @@ app.use('/api/notifications', authMiddleware, notificationsRoutes);
 app.use('/api/transactions', authMiddleware, transactionsRoutes);
 app.use('/api/stock-items', authMiddleware, stockItemsRoutes);
 app.use('/api/purchases', authMiddleware, purchasesRoutes);
+app.use('/api/kits', authMiddleware, kitsRoutes);
+
 
 // 404
 app.use((req, res) => {

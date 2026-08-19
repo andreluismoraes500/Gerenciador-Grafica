@@ -1,3 +1,4 @@
+// backend/src/routes/products.routes.ts
 import { Router } from 'express';
 import { productsController } from '../controllers/products.controller';
 import { canViewProducts, canManageProducts } from '../middlewares/auth';
@@ -7,7 +8,7 @@ export const productsRoutes = Router();
 // Visualização - todos podem ver
 productsRoutes.get('/', canViewProducts, productsController.list);
 productsRoutes.get('/:id', canViewProducts, productsController.getById);
-productsRoutes.get('/categories', canViewProducts, productsController.listCategories);
+productsRoutes.get('/categories', canViewProducts, productsController.listCategories); // ✅ VERIFICAR SE ESTÁ AQUI
 
 // Gerenciamento - apenas ADMIN e ATTENDANT
 productsRoutes.post('/', canManageProducts, productsController.create);

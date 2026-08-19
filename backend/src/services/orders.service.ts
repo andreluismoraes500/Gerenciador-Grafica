@@ -54,10 +54,10 @@ export const ordersService = {
   async getById(id: string) {
     const order = await prisma.order.findUnique({
       where: { id },
-      include: { 
-        client: true, 
-        items: { include: { product: true } }, 
-        invoices: true, 
+      include: {
+        client: true,
+        items: { include: { product: true } },
+        invoices: true,
         project: true,
         transactions: true,
       },
@@ -209,91 +209,227 @@ export const ordersService = {
 
   /**
    * Update payment status with automatic financial integration
-   * ✅ CORREÇÃO: Garantir que paidAt seja preenchido corretamente
+   * ✅ CORREÇÃO COMPLETA: Tratar todos os casos de status com logs
    */
   async updatePaymentStatus(id: string, paymentStatus: string) {
-    const existing = await prisma.order.findUnique({
-      where: { id },
-      include: { client: true },
-    });
-    if (!existing) throw new AppError('Pedido não encontrado', 404);
+    try {
+      const existing = await prisma.order.findUnique({
+        where: { id },
+        include: {
+          client: true,
+          transactions: true,
+        },
+      });
 
-    // Se for PAID, cria transação financeira automaticamente
-    if (paymentStatus === 'PAID') {
-      const paidAt = new Date(); // ✅ Data do pagamento
+      if (!existing) {
+        throw new AppError('Pedido não encontrado', 404);
+      }
 
-      await prisma.$transaction(async (tx) => {
-        // Verifica se já existe uma transação para este pedido
-        const existingTransaction = await tx.transaction.findFirst({
-          where: { 
-            orderId: existing.id,
-            type: 'INCOME',
-          },
+      console.log('[updatePaymentStatus] Pedido:', existing.code, 'Status atual:', existing.paymentStatus, 'Novo status:', paymentStatus);
+
+      // PAID - Confirma pagamento
+      if (paymentStatus === 'PAID') {
+        // Verificar se já não está pago
+        if (existing.paymentStatus === 'PAID') {
+          throw new AppError('Este pedido já está pago', 400);
+        }
+
+        const now = new Date();
+
+        await prisma.$transaction(async (tx) => {
+          // 1. Atualizar o pedido
+          await tx.order.update({
+            where: { id },
+            data: {
+              paymentStatus: 'PAID',
+              paidAt: now,
+            },
+          });
+
+          // 2. Verificar se já existe transação
+          const existingTransaction = await tx.transaction.findFirst({
+            where: {
+              orderId: existing.id,
+              type: 'INCOME',
+            },
+          });
+
+          // 3. Criar transação se não existir
+          if (!existingTransaction) {
+            await tx.transaction.create({
+              data: {
+                type: 'INCOME',
+                category: 'Venda de Pedido',
+                description: `Receita do Pedido ${existing.code} - ${existing.client?.name || 'Cliente'}`,
+                amount: existing.total,
+                dueDate: now,
+                paidAt: now,
+                status: 'PAID',
+                orderId: existing.id,
+                clientId: existing.clientId,
+              },
+            });
+            console.log('[updatePaymentStatus] Transação criada para pedido:', existing.code);
+          } else {
+            // Se já existe transação, atualizar para PAID
+            await tx.transaction.update({
+              where: { id: existingTransaction.id },
+              data: {
+                status: 'PAID',
+                paidAt: now,
+              },
+            });
+            console.log('[updatePaymentStatus] Transação atualizada para pedido:', existing.code);
+          }
         });
 
-        if (!existingTransaction) {
+        // Notificar equipe
+        await notificationsService.notifyTeam('', {
+          title: '💳 Pagamento confirmado',
+          message: `Pedido ${existing.code} foi pago — R$ ${existing.total.toFixed(2)}`,
+          type: 'SUCCESS',
+          metadata: { entity: 'Order', entityId: existing.id, route: '/orders' },
+        });
+
+        console.log('[updatePaymentStatus] Pagamento confirmado para pedido:', existing.code);
+      }
+      // REFUNDED - Reembolso
+      else if (paymentStatus === 'REFUNDED') {
+        const now = new Date();
+
+        await prisma.$transaction(async (tx) => {
+          // 1. Atualizar o pedido
+          await tx.order.update({
+            where: { id },
+            data: {
+              paymentStatus: 'REFUNDED',
+              paidAt: null,
+            },
+          });
+
+          // 2. Criar transação de reembolso
           await tx.transaction.create({
             data: {
-              type: 'INCOME',
-              category: 'Venda de Pedido',
-              description: `Receita do Pedido ${existing.code} - ${existing.client?.name || ''}`,
+              type: 'EXPENSE',
+              category: 'Reembolso',
+              description: `Reembolso do Pedido ${existing.code} - ${existing.client?.name || 'Cliente'}`,
               amount: existing.total,
-              dueDate: paidAt,
-              paidAt: paidAt, // ✅ Garantir que paidAt seja preenchido
+              dueDate: now,
+              paidAt: now,
               status: 'PAID',
               orderId: existing.id,
               clientId: existing.clientId,
             },
           });
-        }
 
-        // ✅ Atualiza o pedido com paidAt
-        await tx.order.update({
-          where: { id },
-          data: { 
-            paymentStatus: 'PAID', 
-            paidAt: paidAt // ✅ GARANTIR QUE SEJA PREENCHIDO
-          },
+          // 3. Atualizar transação de income se existir
+          const incomeTransaction = await tx.transaction.findFirst({
+            where: {
+              orderId: existing.id,
+              type: 'INCOME',
+            },
+          });
+
+          if (incomeTransaction) {
+            await tx.transaction.update({
+              where: { id: incomeTransaction.id },
+              data: {
+                status: 'CANCELLED',
+              },
+            });
+          }
         });
-      });
 
-      // Notifica a equipe sobre o pagamento
-      await notificationsService.notifyTeam('', {
-        title: '💳 Pagamento confirmado',
-        message: `Pedido ${existing.code} foi pago — R$ ${existing.total.toFixed(2)}`,
-        type: 'SUCCESS',
-        metadata: { entity: 'Order', entityId: existing.id, route: '/orders' },
-      });
-    } else if (paymentStatus === 'REFUNDED') {
-      // Cria transação de reembolso (despesa)
-      await prisma.$transaction(async (tx) => {
-        await tx.transaction.create({
-          data: {
-            type: 'EXPENSE',
-            category: 'Reembolso',
-            description: `Reembolso do Pedido ${existing.code} - ${existing.client?.name || ''}`,
-            amount: existing.total,
-            dueDate: new Date(),
-            paidAt: new Date(),
-            status: 'PAID',
-            orderId: existing.id,
-            clientId: existing.clientId,
-          },
+        await notificationsService.notifyTeam('', {
+          title: '🔄 Reembolso realizado',
+          message: `Pedido ${existing.code} teve reembolso processado.`,
+          type: 'WARNING',
+          metadata: { entity: 'Order', entityId: existing.id, route: '/orders' },
         });
+
+        console.log('[updatePaymentStatus] Reembolso processado para pedido:', existing.code);
+      }
+      // CANCELLED - Cancelar pagamento
+      else if (paymentStatus === 'CANCELLED') {
+        await prisma.$transaction(async (tx) => {
+          await tx.order.update({
+            where: { id },
+            data: {
+              paymentStatus: 'CANCELLED',
+              paidAt: null,
+            },
+          });
+
+          // Atualizar transação se existir
+          const transaction = await tx.transaction.findFirst({
+            where: {
+              orderId: existing.id,
+              type: 'INCOME',
+            },
+          });
+
+          if (transaction) {
+            await tx.transaction.update({
+              where: { id: transaction.id },
+              data: {
+                status: 'CANCELLED',
+              },
+            });
+          }
+        });
+
+        console.log('[updatePaymentStatus] Pagamento cancelado para pedido:', existing.code);
+      }
+      // PENDING - Voltar para pendente
+      else if (paymentStatus === 'PENDING') {
+        await prisma.$transaction(async (tx) => {
+          await tx.order.update({
+            where: { id },
+            data: {
+              paymentStatus: 'PENDING',
+              paidAt: null,
+            },
+          });
+
+          // Atualizar transação se existir
+          const transaction = await tx.transaction.findFirst({
+            where: {
+              orderId: existing.id,
+              type: 'INCOME',
+            },
+          });
+
+          if (transaction && transaction.status === 'PAID') {
+            await tx.transaction.update({
+              where: { id: transaction.id },
+              data: {
+                status: 'PENDING',
+                paidAt: null,
+              },
+            });
+          }
+        });
+
+        console.log('[updatePaymentStatus] Pagamento voltou para pendente:', existing.code);
+      } else {
+        throw new AppError(`Status de pagamento inválido: ${paymentStatus}`, 400);
+      }
+
+      // Retornar o pedido atualizado
+      const updatedOrder = await prisma.order.findUnique({
+        where: { id },
+        include: {
+          client: true,
+          transactions: true,
+        },
       });
 
-      await notificationsService.notifyTeam('', {
-        title: '🔄 Reembolso realizado',
-        message: `Pedido ${existing.code} teve reembolso processado.`,
-        type: 'WARNING',
-        metadata: { entity: 'Order', entityId: existing.id, route: '/orders' },
-      });
+      return updatedOrder || existing;
+    } catch (error) {
+      console.error('[updatePaymentStatus] Erro:', error);
+      if (error instanceof AppError) throw error;
+      throw new AppError('Erro ao atualizar status de pagamento: ' + (error as Error).message, 500);
     }
-
-    return prisma.order.findUnique({
-      where: { id },
-      include: { client: true },
-    });
   },
 
   async getInvoice(orderId: string) {
@@ -322,23 +458,23 @@ export const ordersService = {
       months.map(async monthStart => {
         const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1);
         const [count, revenue] = await Promise.all([
-          prisma.order.count({ 
-            where: { 
-              createdAt: { gte: monthStart, lt: monthEnd } 
-            } 
+          prisma.order.count({
+            where: {
+              createdAt: { gte: monthStart, lt: monthEnd }
+            }
           }),
           prisma.order.aggregate({
-            where: { 
-              paidAt: { gte: monthStart, lt: monthEnd }, // ✅ Usar paidAt
-              paymentStatus: 'PAID' 
+            where: {
+              paidAt: { gte: monthStart, lt: monthEnd },
+              paymentStatus: 'PAID'
             },
             _sum: { total: true },
           }),
         ]);
-        return { 
-          month: monthStart, 
-          orders: count, 
-          revenue: revenue._sum.total || 0 
+        return {
+          month: monthStart,
+          orders: count,
+          revenue: revenue._sum.total || 0
         };
       }),
     );
