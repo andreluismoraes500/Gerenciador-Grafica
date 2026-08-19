@@ -1,3 +1,4 @@
+// backend/src/services/products.service.ts
 import { prisma } from '../config/database';
 import { AppError } from '../utils/AppError';
 import { notificationsService } from './notifications.service';
@@ -56,13 +57,11 @@ export const productsService = {
   },
 
   async create(data: any, _createdBy: string) {
-    // Verifica se SKU já existe
     const existing = await prisma.product.findUnique({
       where: { sku: data.sku },
     });
     if (existing) throw new AppError('SKU already exists', 409);
 
-    // Calcula margem automaticamente
     const margin = data.costPrice > 0 
       ? ((data.salePrice - data.costPrice) / data.costPrice) * 100 
       : 0;
@@ -80,7 +79,6 @@ export const productsService = {
     const existing = await prisma.product.findUnique({ where: { id } });
     if (!existing) throw new AppError('Product not found', 404);
 
-    // Verifica duplicidade de SKU
     if (data.sku && data.sku !== existing.sku) {
       const duplicate = await prisma.product.findUnique({
         where: { sku: data.sku },
@@ -88,7 +86,6 @@ export const productsService = {
       if (duplicate) throw new AppError('SKU already exists', 409);
     }
 
-    // Recalcula margem se preços foram alterados
     const costPrice = data.costPrice ?? existing.costPrice;
     const salePrice = data.salePrice ?? existing.salePrice;
     const margin = costPrice > 0 
@@ -120,10 +117,8 @@ export const productsService = {
     });
     if (!existing) throw new AppError('Product not found', 404);
 
-    // Verifica se o produto está sendo usado em pedidos ou orçamentos
     const { orderItems, quoteItems, kits } = existing._count;
     if (orderItems > 0 || quoteItems > 0 || kits > 0) {
-      // Em vez de excluir, apenas desativa
       return prisma.product.update({
         where: { id },
         data: { isActive: false },
@@ -133,15 +128,24 @@ export const productsService = {
     return prisma.product.delete({ where: { id } });
   },
 
-  async listCategories() {
-    return prisma.category.findMany({
+  // ✅ LISTAR CATEGORIAS - CORRIGIDO
+  async listCategories(limit?: number) {
+    console.log('[products.service] listCategories - limit:', limit);
+    
+    const take = limit && limit > 0 && limit <= 500 ? limit : undefined;
+    
+    const categories = await prisma.category.findMany({
       where: { isActive: true },
       include: {
         children: true,
         _count: { select: { products: true } },
       },
       orderBy: { name: 'asc' },
+      ...(take ? { take } : {}),
     });
+    
+    console.log('[products.service] listCategories - encontradas:', categories.length);
+    return categories;
   },
 
   async createCategory(data: { name: string; description?: string; parentId?: string }) {
@@ -192,7 +196,6 @@ export const productsService = {
       data: { stock: newStock },
     });
 
-    // Notifica se estoque está baixo
     if (updated.stock <= updated.minStock) {
       await notificationsService.notifyLowStock(
         updated.name,

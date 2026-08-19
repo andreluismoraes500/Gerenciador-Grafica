@@ -1,3 +1,4 @@
+// frontend/src/components/crud/CrudPage.tsx
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -67,17 +68,35 @@ export interface CrudConfig {
 export const getPath = (o: any, p: string) =>
   p.split(".").reduce((a, k) => a?.[k], o);
 
+// ✅ FUNÇÃO MELHORADA PARA BUSCAR OPÇÕES
 export function useList(url: string): any[] {
-  return (
-    useQuery({
-      queryKey: ["options", url],
-      queryFn: () =>
-        api.get(url).then((r) => {
-          const d = r.data;
-          return Array.isArray(d) ? d : (d.data ?? []);
-        }),
-    }).data ?? []
-  );
+  const { data } = useQuery({
+    queryKey: ["options", url],
+    queryFn: async () => {
+      try {
+        const response = await api.get(url, { params: { limit: 500 } });
+        const d = response.data;
+
+        // Suporta diferentes formatos de resposta
+        if (Array.isArray(d)) return d;
+        if (d?.data && Array.isArray(d.data)) return d.data;
+        if (d?.items && Array.isArray(d.items)) return d.items;
+
+        console.warn(
+          `[useList] Formato de resposta inesperado para ${url}:`,
+          d,
+        );
+        return [];
+      } catch (error) {
+        console.error(`[useList] Erro ao carregar ${url}:`, error);
+        // Retorna array vazio em vez de propagar o erro
+        return [];
+      }
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutos de cache
+    retry: 1,
+  });
+  return data || [];
 }
 
 function buildSchema(fields: FieldDef[]) {
@@ -87,18 +106,19 @@ function buildSchema(fields: FieldDef[]) {
       shape[f.name] = f.zod;
       continue;
     }
-    if (f.type === "number")
+    if (f.type === "number") {
       shape[f.name] = f.required
         ? z.coerce.number({ invalid_type_error: "Obrigatório" })
         : z.coerce.number().optional();
-    else if (f.type === "email")
+    } else if (f.type === "email") {
       shape[f.name] = f.required
         ? z.string().min(1, "Obrigatório").email("Email inválido")
         : z.string().email("Email inválido").optional().or(z.literal(""));
-    else
+    } else {
       shape[f.name] = f.required
         ? z.string().min(1, "Campo obrigatório")
         : z.string().optional();
+    }
   }
   return z.object(shape);
 }
@@ -132,6 +152,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
     placeholderData: (p) => p,
   });
 
+  // ✅ CARREGAR OPÇÕES DE URLS
   const optionUrls = useMemo(
     () =>
       Array.from(
@@ -141,20 +162,38 @@ export function CrudPage({ config }: { config: CrudConfig }) {
       ),
     [config.fields],
   );
-  const { data: optMap } = useQuery({
+
+  const { data: optMap, isLoading: optionsLoading } = useQuery({
     queryKey: ["crud-opts", optionUrls],
     enabled: optionUrls.length > 0,
     queryFn: async () => {
       const m: Record<string, { value: string; label: string }[]> = {};
       for (const u of optionUrls) {
-        const arr = await api.get(u, { params: { limit: 200 } }).then((r) => {
-          const d = r.data;
-          return Array.isArray(d) ? d : (d.data ?? []);
-        });
-        m[u] = arr.map((x: any) => ({
-          value: x.id,
-          label: x.name ?? x.title ?? x.sku ?? x.email,
-        }));
+        try {
+          const response = await api.get(u, { params: { limit: 500 } });
+          const d = response.data;
+
+          // Tenta extrair o array de dados
+          let arr: any[] = [];
+          if (Array.isArray(d)) {
+            arr = d;
+          } else if (d?.data && Array.isArray(d.data)) {
+            arr = d.data;
+          } else if (d?.items && Array.isArray(d.items)) {
+            arr = d.items;
+          } else {
+            arr = [];
+          }
+
+          // Mapeia para o formato { value, label }
+          m[u] = arr.map((x: any) => ({
+            value: x.id || x.value,
+            label: x.name ?? x.title ?? x.sku ?? x.email ?? String(x.id),
+          }));
+        } catch (error) {
+          console.error(`[CrudPage] Erro ao carregar opções de ${u}:`, error);
+          m[u] = [];
+        }
       }
       return m;
     },
@@ -181,6 +220,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
     onError: (e: any) =>
       toast.error(e?.response?.data?.error || "Erro ao salvar."),
   });
+
   const del = useMutation({
     mutationFn: (id: string) => api.delete(`${config.endpoint}/${id}`),
     onSuccess: () => {
@@ -196,11 +236,13 @@ export function CrudPage({ config }: { config: CrudConfig }) {
     setEditing(null);
     reset(config.defaultValues ?? {});
   };
+
   const openNew = () => {
     setEditing(null);
     reset(config.defaultValues ?? {});
     setOpen(true);
   };
+
   const openEdit = (row: any) => {
     setEditing(row);
     const vals: any = {};
@@ -281,7 +323,6 @@ export function CrudPage({ config }: { config: CrudConfig }) {
                   ))}
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-3">
-                      {/* Botão Editar */}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -293,8 +334,6 @@ export function CrudPage({ config }: { config: CrudConfig }) {
                           Editar
                         </span>
                       </Button>
-
-                      {/* Botão Excluir */}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -359,6 +398,8 @@ export function CrudPage({ config }: { config: CrudConfig }) {
             <div className="grid gap-4 sm:grid-cols-2">
               {config.fields.map((f) => {
                 const err = errors[f.name];
+                const fieldOptions = f.options ?? optMap?.[f.optionsUrl!] ?? [];
+
                 return (
                   <div
                     key={f.name}
@@ -381,7 +422,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
                       <Select
                         {...register(f.name)}
                         placeholder="Selecione..."
-                        options={f.options ?? optMap?.[f.optionsUrl!] ?? []}
+                        options={fieldOptions}
                       />
                     ) : (
                       <Input
