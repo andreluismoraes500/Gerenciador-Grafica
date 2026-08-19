@@ -33,6 +33,12 @@ const menuItems = [
     permission: "canViewProducts",
   },
   {
+    to: "/kits",
+    icon: Package,
+    label: "Kits",
+    permission: "canViewProducts",
+  },
+  {
     to: "/quotes",
     icon: FileText,
     label: "Orçamentos",
@@ -56,6 +62,12 @@ const menuItems = [
     icon: Truck,
     label: "Fornecedores",
     permission: "canViewSuppliers",
+  },
+  {
+    to: "/purchases",
+    icon: ShoppingCart,
+    label: "Compras",
+    permission: "canViewFinance",
   },
   {
     to: "/transactions",

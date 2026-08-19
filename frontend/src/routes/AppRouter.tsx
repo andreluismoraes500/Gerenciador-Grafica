@@ -16,6 +16,7 @@ import { SuppliersPage } from "@/features/suppliers/SuppliersPage";
 import { TransactionsPage } from "@/features/transactions/TransactionsPage";
 import { TasksPage } from "@/features/tasks/TasksPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { PurchasesPage } from "@/features/purchases/PurchasesPage";
 
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
   const user = useAuthStore((s) => s.user);
@@ -55,6 +56,7 @@ export default function AppRouter() {
           <Route path="/transactions" element={<TransactionsPage />} />
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/purchases" element={<PurchasesPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
