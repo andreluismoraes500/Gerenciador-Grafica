@@ -97,3 +97,7 @@ export const canManageTasks = requireRole('ADMIN', 'ATTENDANT', 'DESIGNER');
 // CONFIGURAÇÕES: apenas ADMIN
 export const canManageSettings = requireRole('ADMIN');
 export const canViewSettings = requireRole('ADMIN', 'DESIGNER');
+
+// Adicione as permissões para kits
+export const canManageKits = requireRole('ADMIN', 'ATTENDANT');
+export const canViewKits = requireRole('ADMIN', 'ATTENDANT', 'DESIGNER');

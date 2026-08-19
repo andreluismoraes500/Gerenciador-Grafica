@@ -49,6 +49,8 @@ settingsRoutes.get('/permissions', (req, res) => {
     canManageTasks: ['ADMIN', 'ATTENDANT', 'DESIGNER'].includes(role),
     canManageSettings: ['ADMIN'].includes(role),
     canViewSettings: ['ADMIN', 'DESIGNER'].includes(role),
+    canViewKits: ['ADMIN', 'ATTENDANT', 'DESIGNER'].includes(role),
+    canManageKits: ['ADMIN', 'ATTENDANT'].includes(role),
     role: role,
   };
   
